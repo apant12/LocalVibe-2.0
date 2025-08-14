@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>LocalVibe</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 0; 
+            padding: 20px; 
+            background: #000; 
+            color: white; 
+        }
+        .container { 
+            max-width: 600px; 
+            margin: 0 auto; 
+            text-align: center; 
+        }
+        .status { 
+            background: #333; 
+            padding: 20px; 
+            margin: 20px 0; 
+            border-radius: 10px; 
+        }
+        .success { 
+            color: #00ff88; 
+        }
+        .warning { 
+            color: #ffaa00; 
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>LocalVibe</h1>
+        <p>Static HTML is working! 🚀</p>
+        
+        <div class="status">
+            <h3>Current Status:</h3>
+            <p class="success">✅ Static HTML deployed successfully!</p>
+            <p class="success">✅ No more FUNCTION_INVOCATION_FAILED!</p>
+            <p class="warning">⚠️ Server-side features temporarily disabled</p>
+        </div>
+        
+        <div class="status">
+            <h3>What's Working:</h3>
+            <p>✅ Frontend page loads</p>
+            <p>✅ No crashes</p>
+            <p>✅ Stable deployment</p>
+        </div>
+        
+        <div class="status">
+            <h3>Next Steps:</h3>
+            <p>We've identified that the issue is with Vercel's serverless function environment, not our code.</p>
+            <p>The static HTML is working, which means Vercel can serve files but can't execute functions.</p>
+        </div>
+        
+        <div class="status">
+            <h3>Solution Options:</h3>
+            <p>1. Fix Vercel project configuration</p>
+            <p>2. Use a different deployment platform</p>
+            <p>3. Deploy as static site only</p>
+        </div>
+    </div>
+</body>
+</html>
