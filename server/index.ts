@@ -65,9 +65,45 @@ app.get('/api/logout', (req, res) => {
   });
 });
 
-// Catch-all route
+// Serve static files for the React app
+app.use(express.static('client/dist'));
+
+// Catch-all route - serve React app for frontend routes
 app.use('*', (req, res) => {
-  res.json({ message: 'Server is running', path: req.path });
+  // If it's an API route, return JSON
+  if (req.path.startsWith('/api/')) {
+    return res.json({ message: 'API route not found', path: req.path });
+  }
+  
+  // For frontend routes, serve the React app
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>LocalVibe</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="description" content="Discover unique local experiences">
+      </head>
+      <body>
+        <div id="root">
+          <div style="display: flex; justify-content: center; align-items: center; height: 100vh; font-family: Arial, sans-serif;">
+            <div style="text-align: center;">
+              <h1>LocalVibe</h1>
+              <p>Loading...</p>
+              <p>If you see this message, the React app needs to be built.</p>
+            </div>
+          </div>
+        </div>
+        <script>
+          // Simple redirect to login for now
+          if (window.location.pathname !== '/api/health' && window.location.pathname !== '/api/test') {
+            window.location.href = '/login';
+          }
+        </script>
+      </body>
+    </html>
+  `);
 });
 
 // Start the server
