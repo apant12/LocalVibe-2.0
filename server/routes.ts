@@ -84,7 +84,101 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   }
 
-  // Local development authentication routes (must be AFTER production routes to override them)
+  // Production login routes (available in both development and production)
+  app.post('/api/login', async (req: any, res) => {
+    try {
+      const { email, password } = req.body;
+      
+      // Check if this is admin login
+      if (email === 'admin@vibe.com' && password === 'admin123') {
+        const adminUser = {
+          id: 'admin-user-1',
+          email: 'admin@vibe.com',
+          firstName: 'Admin',
+          lastName: 'User',
+          profileImageUrl: null,
+          isAdmin: true
+        };
+        
+        // Upsert the admin user to the database
+        await storage.upsertUser(adminUser);
+        
+        // Set session
+        req.session.userId = adminUser.id;
+        req.session.user = adminUser;
+        
+        return res.json({ success: true, user: adminUser });
+      }
+      
+      // For regular users, check if they exist and validate password
+      const existingUser = await storage.getUserByEmail(email);
+      if (!existingUser) {
+        return res.status(401).json({ message: "Invalid email or password" });
+      }
+      
+      // Check if user has a password (for users created via signup)
+      if (existingUser.password) {
+        const isValidPassword = await bcrypt.compare(password, existingUser.password);
+        if (!isValidPassword) {
+          return res.status(401).json({ message: "Invalid email or password" });
+        }
+      } else {
+        // For legacy users without passwords, allow any password in development
+        if (process.env.NODE_ENV !== 'development') {
+          return res.status(401).json({ message: "Invalid email or password" });
+        }
+      }
+      
+      // Set session
+      req.session.userId = existingUser.id;
+      req.session.user = existingUser;
+      
+      res.json({ success: true, user: existingUser });
+    } catch (error) {
+      console.error("Login error:", error);
+      res.status(500).json({ message: "Error during login" });
+    }
+  });
+
+  app.post('/api/signup', async (req: any, res) => {
+    try {
+      const { email, password, firstName, lastName, isAdmin } = req.body;
+      
+      // Check if user already exists
+      const existingUser = await storage.getUserByEmail(email);
+      if (existingUser) {
+        return res.status(400).json({ message: "User with this email already exists" });
+      }
+      
+      // Hash password
+      const hashedPassword = await bcrypt.hash(password, 10);
+      
+      // Create new user
+      const newUser = {
+        id: `user-${Date.now()}`,
+        email,
+        firstName: firstName || '',
+        lastName: lastName || '',
+        password: hashedPassword,
+        isAdmin: isAdmin || false,
+        profileImageUrl: null
+      };
+      
+      // Save user to database
+      await storage.upsertUser(newUser);
+      
+      // Set session
+      req.session.userId = newUser.id;
+      req.session.user = newUser;
+      
+      res.json({ success: true, user: newUser });
+    } catch (error) {
+      console.error("Signup error:", error);
+      res.status(500).json({ message: "Error during signup" });
+    }
+  });
+
+  // Authentication routes for both development and production
   if (process.env.NODE_ENV === "development" && !process.env.REPL_ID) {
     // Add fallback OAuth routes for local development
     app.get('/api/auth/google', (req, res) => {
