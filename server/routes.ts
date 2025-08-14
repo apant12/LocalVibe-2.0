@@ -84,10 +84,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   }
 
+  // Test route to check if server is working
+  app.get('/api/test', (req, res) => {
+    res.json({ 
+      message: "Server is working", 
+      timestamp: new Date().toISOString(),
+      env: {
+        NODE_ENV: process.env.NODE_ENV,
+        DATABASE_URL: process.env.DATABASE_URL ? 'SET' : 'NOT SET',
+        SESSION_SECRET: process.env.SESSION_SECRET ? 'SET' : 'NOT SET'
+      }
+    });
+  });
+
   // Production login routes (available in both development and production)
   app.post('/api/login', async (req: any, res) => {
     try {
       console.log("Login attempt received:", { email: req.body.email, hasPassword: !!req.body.password });
+      console.log("Environment check:", { 
+        NODE_ENV: process.env.NODE_ENV, 
+        DATABASE_URL: process.env.DATABASE_URL ? 'SET' : 'NOT SET',
+        SESSION_SECRET: process.env.SESSION_SECRET ? 'SET' : 'NOT SET'
+      });
+      
       const { email, password } = req.body;
       
       // Check if this is admin login
@@ -102,9 +121,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           isAdmin: true
         };
         
-        // Upsert the admin user to the database
-        await storage.upsertUser(adminUser);
-        console.log("Admin user upserted to database");
+        try {
+          // Try to upsert the admin user to the database
+          await storage.upsertUser(adminUser);
+          console.log("Admin user upserted to database");
+        } catch (dbError) {
+          console.log("Database operation failed, continuing with session only:", dbError.message);
+          // Continue even if database fails
+        }
         
         // Set session
         req.session.userId = adminUser.id;
