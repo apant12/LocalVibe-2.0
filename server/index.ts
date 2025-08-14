@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
+import bcrypt from "bcryptjs";
 
 // Try to import database modules with fallback
 let db: any = null;
@@ -56,6 +57,37 @@ app.get('/api/test', (req, res) => {
   res.json({ message: 'Server is working' });
 });
 
+// Test signup endpoint (for development testing)
+app.post('/api/test-signup', async (req, res) => {
+  try {
+    const { email, password, firstName, lastName } = req.body;
+    
+    // Basic validation
+    if (!email || !password || !firstName || !lastName) {
+      return res.status(400).json({ 
+        message: 'All fields are required: email, password, firstName, lastName' 
+      });
+    }
+    
+    // Hash password for testing
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+    
+    res.json({ 
+      message: 'Signup test successful', 
+      hashedPassword: hashedPassword.substring(0, 20) + '...',
+      passwordLength: password.length,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    res.status(500).json({ 
+      message: 'Signup test failed', 
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
 // Database test route
 app.get('/api/test-db', async (req, res) => {
   try {
@@ -84,6 +116,81 @@ app.get('/api/test-db', async (req, res) => {
   }
 });
 
+// User registration endpoint
+app.post('/api/signup', async (req, res) => {
+  try {
+    const { email, password, firstName, lastName } = req.body;
+    
+    // Basic validation
+    if (!email || !password || !firstName || !lastName) {
+      return res.status(400).json({ 
+        message: 'All fields are required: email, password, firstName, lastName' 
+      });
+    }
+    
+    if (password.length < 6) {
+      return res.status(400).json({ 
+        message: 'Password must be at least 6 characters long' 
+      });
+    }
+    
+    // Check if database is available
+    if (db && storage) {
+      try {
+        // Check if user already exists
+        const existingUser = await storage.getUserByEmail(email);
+        if (existingUser) {
+          return res.status(409).json({ 
+            message: 'User with this email already exists' 
+          });
+        }
+        
+        // Hash the password
+        const saltRounds = 10;
+        const hashedPassword = await bcrypt.hash(password, saltRounds);
+        
+        // Create new user with hashed password
+        const newUser = {
+          id: `user-${Date.now()}`,
+          email,
+          password: hashedPassword,
+          firstName,
+          lastName,
+          isAdmin: false,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        };
+        
+        const createdUser = await storage.upsertUser(newUser);
+        
+        // Set session
+        req.session.userId = createdUser.id;
+        req.session.user = createdUser;
+        
+        res.json({ 
+          success: true, 
+          user: createdUser, 
+          message: 'User created successfully' 
+        });
+        return;
+        
+      } catch (dbError) {
+        console.log('Database signup failed:', dbError instanceof Error ? dbError.message : 'Unknown error');
+        // Fall through to hardcoded response
+      }
+    }
+    
+    // Fallback response if database not available
+    res.status(503).json({ 
+      message: 'User registration temporarily unavailable. Please try again later.' 
+    });
+    
+  } catch (error) {
+    console.error('Signup error:', error);
+    res.status(500).json({ message: 'Signup failed' });
+  }
+});
+
 // Enhanced login route with database support
 app.post('/api/login', async (req, res) => {
   try {
@@ -96,11 +203,25 @@ app.post('/api/login', async (req, res) => {
         const existingUser = await storage.getUserByEmail(email);
         
         if (existingUser) {
-          // User exists, set session
-          req.session.userId = existingUser.id;
-          req.session.user = existingUser;
-          res.json({ success: true, user: existingUser, source: 'database' });
-          return;
+          // Verify password if user has a hashed password
+          if (existingUser.password && existingUser.password.length > 20) {
+            // This looks like a hashed password, verify it
+            const passwordMatch = await bcrypt.compare(password, existingUser.password);
+            if (passwordMatch) {
+              req.session.userId = existingUser.id;
+              req.session.user = existingUser;
+              res.json({ success: true, user: existingUser, source: 'database' });
+              return;
+            } else {
+              return res.status(401).json({ message: 'Invalid credentials' });
+            }
+          } else {
+            // Legacy user without hashed password, set session
+            req.session.userId = existingUser.id;
+            req.session.user = existingUser;
+            res.json({ success: true, user: existingUser, source: 'database' });
+            return;
+          }
         }
       } catch (dbError) {
         console.log('Database lookup failed, falling back to hardcoded:', dbError instanceof Error ? dbError.message : 'Unknown error');
