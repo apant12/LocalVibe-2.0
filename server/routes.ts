@@ -87,10 +87,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Production login routes (available in both development and production)
   app.post('/api/login', async (req: any, res) => {
     try {
+      console.log("Login attempt received:", { email: req.body.email, hasPassword: !!req.body.password });
       const { email, password } = req.body;
       
       // Check if this is admin login
       if (email === 'admin@vibe.com' && password === 'admin123') {
+        console.log("Admin login attempt");
         const adminUser = {
           id: 'admin-user-1',
           email: 'admin@vibe.com',
@@ -102,10 +104,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         // Upsert the admin user to the database
         await storage.upsertUser(adminUser);
+        console.log("Admin user upserted to database");
         
         // Set session
         req.session.userId = adminUser.id;
         req.session.user = adminUser;
+        console.log("Session set for admin user:", req.session);
         
         return res.json({ success: true, user: adminUser });
       }
@@ -271,6 +275,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.json({ success: true, user: existingUser });
       } catch (error) {
         console.error("Login error:", error);
+        console.error("Error details:", {
+          message: error.message,
+          stack: error.stack,
+          session: req.session
+        });
         res.status(500).json({ message: "Error during login" });
       }
     });

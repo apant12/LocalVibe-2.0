@@ -42,25 +42,42 @@ export function getSession() {
       },
     });
   } else {
-    // For production, use PostgreSQL store
-    const pgStore = connectPg(session);
-    const sessionStore = new pgStore({
-      conString: process.env.DATABASE_URL,
-      createTableIfMissing: false,
-      ttl: sessionTtl,
-      tableName: "sessions",
-    });
-    return session({
-      secret: process.env.SESSION_SECRET!,
-      store: sessionStore,
-      resave: false,
-      saveUninitialized: false,
-      cookie: {
-        httpOnly: true,
-        secure: true,
-        maxAge: sessionTtl,
-      },
-    });
+    // For production, use PostgreSQL store with fallback to memory store
+    try {
+      const pgStore = connectPg(session);
+      const sessionStore = new pgStore({
+        conString: process.env.DATABASE_URL,
+        createTableIfMissing: true, // Create table if missing
+        ttl: sessionTtl,
+        tableName: "sessions",
+      });
+      
+      console.log("Using PostgreSQL session store");
+      return session({
+        secret: process.env.SESSION_SECRET!,
+        store: sessionStore,
+        resave: false,
+        saveUninitialized: false,
+        cookie: {
+          httpOnly: true,
+          secure: true,
+          maxAge: sessionTtl,
+        },
+      });
+    } catch (error) {
+      console.error("Failed to setup PostgreSQL session store, falling back to memory store:", error);
+      // Fallback to memory store if PostgreSQL fails
+      return session({
+        secret: process.env.SESSION_SECRET!,
+        resave: false,
+        saveUninitialized: false,
+        cookie: {
+          httpOnly: true,
+          secure: true,
+          maxAge: sessionTtl,
+        },
+      });
+    }
   }
 }
 
