@@ -1,6 +1,8 @@
 import 'dotenv/config';
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
+import { db, pool } from "./db";
+import { storage } from "./storage";
 
 // Basic server with session support
 const app = express();
@@ -29,15 +31,55 @@ app.get('/api/test', (req, res) => {
   res.json({ message: 'Server is working' });
 });
 
-// Basic login route
-app.post('/api/login', (req, res) => {
+// Database test route
+app.get('/api/test-db', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ 
+        message: 'Database not connected',
+        error: 'DATABASE_URL not set or connection failed'
+      });
+    }
+    
+    // Test database connection with a simple query
+    const result = await db.select().from(db.users).limit(1);
+    res.json({ 
+      message: 'Database connection successful', 
+      timestamp: new Date().toISOString(),
+      dbTest: 'OK',
+      userCount: result.length
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      message: 'Database connection failed', 
+      error: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Enhanced login route with database support
+app.post('/api/login', async (req, res) => {
   try {
     const { email, password } = req.body;
     
-    // Simple admin check
+    // Check if database is available
+    if (db && storage) {
+      // Try to find user in database
+      const existingUser = await storage.getUserByEmail(email);
+      
+      if (existingUser) {
+        // User exists, set session
+        req.session.userId = existingUser.id;
+        req.session.user = existingUser;
+        res.json({ success: true, user: existingUser, source: 'database' });
+        return;
+      }
+    }
+    
+    // Fallback to hardcoded admin check
     if (email === 'admin@vibe.com' && password === 'admin123') {
-      req.session.userId = 'admin-1';
-      req.session.user = {
+      const adminUser = {
         id: 'admin-1',
         email: 'admin@vibe.com',
         firstName: 'Admin',
@@ -45,7 +87,18 @@ app.post('/api/login', (req, res) => {
         isAdmin: true
       };
       
-      res.json({ success: true, user: req.session.user });
+      // Try to save admin user to database if available
+      if (db && storage) {
+        try {
+          await storage.upsertUser(adminUser);
+        } catch (dbError) {
+          console.log('Could not save admin user to database:', dbError instanceof Error ? dbError.message : 'Unknown error');
+        }
+      }
+      
+      req.session.userId = adminUser.id;
+      req.session.user = adminUser;
+      res.json({ success: true, user: adminUser, source: 'hardcoded' });
     } else {
       res.status(401).json({ message: 'Invalid credentials' });
     }
