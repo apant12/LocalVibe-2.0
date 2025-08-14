@@ -2,16 +2,24 @@ import { Pool } from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import * as schema from "@shared/schema";
 
-// Connect to PostgreSQL database
-if (!process.env.DATABASE_URL) {
-  throw new Error(
-    "DATABASE_URL must be set. Did you forget to provision a database?",
-  );
+// Connect to PostgreSQL database with fallback
+let pool: Pool | null = null;
+let db: any = null;
+
+try {
+  if (!process.env.DATABASE_URL) {
+    console.warn("DATABASE_URL not set, database operations will fail");
+  } else {
+    pool = new Pool({ 
+      connectionString: process.env.DATABASE_URL,
+      ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+    });
+    db = drizzle({ client: pool, schema });
+    console.log("Connected to PostgreSQL database");
+  }
+} catch (error) {
+  console.error("Failed to connect to database:", error);
+  console.log("Continuing without database connection");
 }
 
-export const pool = new Pool({ 
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
-});
-
-export const db = drizzle({ client: pool, schema });
+export { pool, db };

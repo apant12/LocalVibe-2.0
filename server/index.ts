@@ -93,6 +93,10 @@ app.use((req, res, next) => {
       message: error.message,
       stack: error.stack
     });
-    process.exit(1);
+    
+    // Don't exit the process on Vercel, just log the error
+    if (process.env.NODE_ENV !== 'production') {
+      process.exit(1);
+    }
   }
 })();

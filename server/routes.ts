@@ -39,15 +39,25 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Initialize external services
-  const eventbriteService = new EventbriteService();
-  const ticketmasterService = new TicketmasterService();
-  const stripeService = new StripeService();
-  const mapService = new MapService();
-  const muxService = new MuxService();
+  // Simple health check route that won't crash
+  app.get('/api/health', (req, res) => {
+    res.json({ 
+      status: 'ok', 
+      timestamp: new Date().toISOString(),
+      env: process.env.NODE_ENV
+    });
+  });
 
-  // Auth middleware - must be set up first
-  await setupAuth(app);
+  try {
+    // Initialize external services
+    const eventbriteService = new EventbriteService();
+    const ticketmasterService = new TicketmasterService();
+    const stripeService = new StripeService();
+    const mapService = new MapService();
+    const muxService = new MuxService();
+
+    // Auth middleware - must be set up first
+    await setupAuth(app);
 
   // Production authentication routes (only if not in local development)
   console.log("isLocalDevelopment:", isLocalDevelopment);
@@ -1056,6 +1066,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to sync Google Places data" });
     }
   });
+
+  } catch (error) {
+    console.error('Error initializing services:', error);
+    // Continue with basic functionality even if services fail
+  }
 
   const httpServer = createServer(app);
   return httpServer;
