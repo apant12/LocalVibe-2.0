@@ -76,6 +76,28 @@ export function serveStatic(app: Express) {
 
   if (!fs.existsSync(distPath)) {
     console.warn(`Build directory not found: ${distPath}, this is expected in development`);
+    // On Vercel, if client files aren't built, serve a simple fallback
+    app.use("*", (_req, res) => {
+      res.send(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>LocalVibe - Loading...</title>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          </head>
+          <body>
+            <div style="display: flex; justify-content: center; align-items: center; height: 100vh; font-family: Arial, sans-serif;">
+              <div style="text-align: center;">
+                <h1>LocalVibe</h1>
+                <p>Server is running. Client files are being built...</p>
+                <p>Please wait a moment and refresh the page.</p>
+              </div>
+            </div>
+          </body>
+        </html>
+      `);
+    });
     return;
   }
 

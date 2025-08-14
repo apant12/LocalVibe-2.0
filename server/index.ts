@@ -54,6 +54,7 @@ app.use((req, res, next) => {
   if (app.get("env") === "development") {
     await setupVite(app, server);
   } else {
+    // In production (Vercel), serve static files from the built client
     serveStatic(app);
   }
 
