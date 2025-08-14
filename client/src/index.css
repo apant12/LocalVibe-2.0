@@ -1,0 +1,277 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import 'mapbox-gl/dist/mapbox-gl.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom animations for micro-interactions */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes slideInFromTop {
+  0% {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideInFromBottom {
+  0% {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 2s infinite ease-in-out;
+}
+
+.animate-in {
+  animation: slideInFromBottom 0.3s ease-out;
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.slide-in-from-top-4 {
+  animation: slideInFromTop 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+/* Gesture browsing touch feedback */
+.touch-ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(0);
+  animation: ripple 0.6s linear;
+}
+
+@keyframes ripple {
+  to {
+    transform: scale(4);
+    opacity: 0;
+  }
+}
+
+/* Advanced UI enhancements */
+.glass-morphism {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.gradient-text {
+  background: linear-gradient(45deg, #ff6b35, #f7931e);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Heat map visualizations */
+.heat-map-point {
+  border-radius: 50%;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.heat-map-point:hover {
+  transform: scale(1.2);
+  z-index: 10;
+}
+
+/* Mood filter animations */
+.mood-card {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mood-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+/* Social sharing pulse effects */
+.social-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: .5;
+  }
+}
+
+:root {
+  --background: hsl(0, 0%, 0%);
+  --foreground: hsl(0, 0%, 100%);
+  --card: hsl(210, 11%, 15%);
+  --card-foreground: hsl(0, 0%, 100%);
+  --popover: hsl(210, 11%, 15%);
+  --popover-foreground: hsl(0, 0%, 100%);
+  --primary: hsl(356, 100%, 70%);
+  --primary-foreground: hsl(0, 0%, 100%);
+  --secondary: hsl(183, 61%, 58%);
+  --secondary-foreground: hsl(0, 0%, 0%);
+  --muted: hsl(210, 11%, 15%);
+  --muted-foreground: hsl(215, 20%, 65%);
+  --accent: hsl(210, 11%, 15%);
+  --accent-foreground: hsl(0, 0%, 100%);
+  --destructive: hsl(356, 90%, 65%);
+  --destructive-foreground: hsl(0, 0%, 100%);
+  --border: hsl(215, 15%, 25%);
+  --input: hsl(210, 11%, 15%);
+  --ring: hsl(356, 100%, 70%);
+  --success: hsl(164, 100%, 42%);
+  --warning: hsl(45, 100%, 55%);
+  --error: hsl(356, 90%, 65%);
+  --surface: hsl(210, 11%, 15%);
+  --radius: 1rem;
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+@layer utilities {
+  .glass-effect {
+    backdrop-filter: blur(10px);
+    background: rgba(26, 26, 26, 0.8);
+  }
+
+  .gradient-overlay {
+    background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.3) 40%, rgba(0,0,0,0.8) 100%);
+  }
+
+  .floating-action {
+    box-shadow: 0 10px 25px rgba(255, 107, 107, 0.3);
+  }
+
+  .experience-card {
+    scroll-snap-align: start;
+  }
+
+  .feed-container {
+    scroll-snap-type: y mandatory;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .feed-container::-webkit-scrollbar {
+    display: none;
+  }
+
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .animate-pulse-slow {
+    animation: pulse 3s ease-in-out infinite;
+  }
+
+  .animate-bounce-subtle {
+    animation: bounce 2s ease-in-out infinite;
+  }
+}
+
+/* Custom scrollbar for webkit browsers */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(210, 11%, 10%);
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(215, 15%, 25%);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(215, 15%, 35%);
+}
+
+
+/* Custom map styles */
+.experience-marker {
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.experience-marker:hover {
+  transform: scale(1.1);
+}
+
+.experience-popup .mapboxgl-popup-content {
+  padding: 12px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  min-width: 200px;
+}
+
+.experience-popup .mapboxgl-popup-tip {
+  border-top-color: white;
+}
+
+.mapboxgl-popup-close-button {
+  font-size: 16px;
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  line-height: 20px;
+  color: #666;
+}
+
+.mapboxgl-popup-close-button:hover {
+  color: #000;
+  background: none;
+}

@@ -1,0 +1,263 @@
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { Link } from "wouter";
+import { useToast } from "@/hooks/use-toast";
+
+export default function Signup() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [isSigningUp, setIsSigningUp] = useState(false);
+  const [formData, setFormData] = useState({
+    email: '',
+    password: '',
+    firstName: '',
+    lastName: '',
+    isAdmin: false
+  });
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value, type, checked } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }));
+  };
+
+  const handleSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSigningUp(true);
+    
+    try {
+      const response = await fetch('/api/signup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(formData),
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        // Invalidate and refetch the auth query to update the UI
+        await queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+        toast({
+          title: "Signup successful!",
+          description: "Welcome to LocalVibe!",
+        });
+      } else {
+        toast({
+          title: "Signup failed",
+          description: data.message || "There was an error creating your account.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Signup error:', error);
+      toast({
+        title: "Signup failed",
+        description: "There was an error creating your account.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSigningUp(false);
+    }
+  };
+
+                const handleAdminLogin = async () => {
+                setIsSigningUp(true);
+                try {
+                  const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                      email: 'admin@vibe.com',
+                      password: 'admin123'
+                    }),
+                  });
+      
+      if (response.ok) {
+        await queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+        toast({
+          title: "Admin login successful!",
+          description: "Welcome back, Admin!",
+        });
+      } else {
+        toast({
+          title: "Admin login failed",
+          description: "Invalid admin credentials.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Admin login error:', error);
+      toast({
+        title: "Admin login failed",
+        description: "There was an error logging in.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSigningUp(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-black text-white flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+        <Card className="bg-surface border-gray-800">
+          <CardHeader className="text-center">
+            <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center mb-4 mx-auto">
+              <i className="fas fa-user-plus text-2xl text-white"></i>
+            </div>
+            <CardTitle className="text-2xl font-bold">
+              Join <span className="text-primary">LocalVibe</span>
+            </CardTitle>
+            <p className="text-gray-400 mt-2">
+              Create your account to start discovering amazing experiences
+            </p>
+          </CardHeader>
+          
+          <CardContent>
+            <form onSubmit={handleSignup} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="firstName" className="text-white">First Name</Label>
+                  <Input
+                    id="firstName"
+                    name="firstName"
+                    type="text"
+                    value={formData.firstName}
+                    onChange={handleInputChange}
+                    className="bg-gray-800 border-gray-700 text-white"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="lastName" className="text-white">Last Name</Label>
+                  <Input
+                    id="lastName"
+                    name="lastName"
+                    type="text"
+                    value={formData.lastName}
+                    onChange={handleInputChange}
+                    className="bg-gray-800 border-gray-700 text-white"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="email" className="text-white">Email</Label>
+                <Input
+                  id="email"
+                  name="email"
+                  type="email"
+                  value={formData.email}
+                  onChange={handleInputChange}
+                  className="bg-gray-800 border-gray-700 text-white"
+                  required
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="password" className="text-white">Password</Label>
+                <Input
+                  id="password"
+                  name="password"
+                  type="password"
+                  value={formData.password}
+                  onChange={handleInputChange}
+                  className="bg-gray-800 border-gray-700 text-white"
+                  required
+                />
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <input
+                  id="isAdmin"
+                  name="isAdmin"
+                  type="checkbox"
+                  checked={formData.isAdmin}
+                  onChange={handleInputChange}
+                  className="rounded border-gray-600 bg-gray-800"
+                />
+                <Label htmlFor="isAdmin" className="text-white text-sm">
+                  Create as admin user
+                </Label>
+              </div>
+
+              <Button 
+                type="submit"
+                disabled={isSigningUp}
+                className="w-full bg-primary hover:bg-primary/90 text-black font-semibold py-3 px-4 rounded-xl"
+              >
+                {isSigningUp ? (
+                  <>
+                    <div className="animate-spin w-4 h-4 border-2 border-black border-t-transparent rounded-full mr-2"></div>
+                    Creating Account...
+                  </>
+                ) : (
+                  <>
+                    <i className="fas fa-user-plus mr-2"></i>
+                    Create Account
+                  </>
+                )}
+              </Button>
+            </form>
+
+            <div className="relative my-6">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-700"></div>
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="px-2 bg-surface text-gray-400">or</span>
+              </div>
+            </div>
+
+                                    {/* Admin Quick Login */}
+                        <Button
+                          onClick={handleAdminLogin}
+                          disabled={isSigningUp}
+                          className="w-full bg-orange-600 hover:bg-orange-700 text-white font-semibold py-3 px-4 rounded-xl"
+                        >
+                          {isSigningUp ? (
+                            <>
+                              <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
+                              Logging in...
+                            </>
+                          ) : (
+                            <>
+                              <i className="fas fa-crown mr-2"></i>
+                              Admin Login (admin@vibe.com/admin123)
+                            </>
+                          )}
+                        </Button>
+
+            <div className="text-center mt-6">
+              <p className="text-gray-400 text-sm">
+                Already have an account?{' '}
+                <Link href="/login" className="text-primary hover:text-primary/80">
+                  Sign in
+                </Link>
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="text-center mt-6">
+          <Link href="/" className="text-gray-400 hover:text-white text-sm">
+            ← Back to Home
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
