@@ -1,50 +1,20 @@
-// Simple Vercel serverless function
+// Ultra-simple Vercel serverless function
 module.exports = (req, res) => {
-  // Set CORS headers
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-  // Handle preflight requests
-  if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
-  }
-
   // Health check
   if (req.url === '/api/health') {
-    return res.status(200).json({
+    res.status(200).json({
       status: 'ok',
-      message: 'Simple function is working!'
+      message: 'Ultra-simple function working!'
     });
+    return;
   }
 
   // Test endpoint
   if (req.url === '/api/test') {
-    return res.status(200).json({
+    res.status(200).json({
       message: 'Test endpoint working!'
     });
-  }
-
-  // Login endpoint
-  if (req.url === '/api/login' && req.method === 'POST') {
-    try {
-      const body = req.body || {};
-      if (body.email === 'admin@vibe.com' && body.password === 'admin123') {
-        return res.status(200).json({
-          success: true,
-          message: 'Login successful!'
-        });
-      } else {
-        return res.status(401).json({
-          message: 'Invalid credentials'
-        });
-      }
-    } catch (error) {
-      return res.status(500).json({
-        message: 'Login failed'
-      });
-    }
+    return;
   }
 
   // Default response - serve HTML
@@ -65,7 +35,7 @@ module.exports = (req, res) => {
       <body>
         <div class="container">
           <h1>LocalVibe</h1>
-          <p>Simple function is working! 🚀</p>
+          <p>Ultra-simple function is working! 🚀</p>
           
           <h3>Test these endpoints:</h3>
           <div class="endpoint">
@@ -76,8 +46,8 @@ module.exports = (req, res) => {
           </div>
           
           <h3>Status:</h3>
-          <p style="color: #00ff88;">✅ Function deployed!</p>
-          <p style="color: #00ff88;">✅ No more NOT_FOUND errors!</p>
+          <p style="color: #00ff88;">✅ Function found!</p>
+          <p style="color: #00ff88;">✅ No more NOT_FOUND!</p>
           <p style="color: #00ff88;">✅ Should work now!</p>
         </div>
       </body>
