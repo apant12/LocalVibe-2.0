@@ -1,43 +1,54 @@
-// Most basic Vercel serverless function
-export default function handler(req, res) {
-  // Basic health check
-  if (req.url === '/api/health') {
-    return res.status(200).json({
-      status: 'ok',
-      message: 'Basic serverless function working!'
-    });
-  }
+import express from 'express';
 
-  // Basic test endpoint
-  if (req.url === '/api/test') {
-    return res.status(200).json({
-      message: 'Test endpoint working!'
-    });
-  }
+const app = express();
 
-  // Basic login
-  if (req.url === '/api/login' && req.method === 'POST') {
-    try {
-      const body = req.body || {};
-      if (body.email === 'admin@vibe.com' && body.password === 'admin123') {
-        return res.status(200).json({
-          success: true,
-          message: 'Login successful!'
-        });
-      } else {
-        return res.status(401).json({
-          message: 'Invalid credentials'
-        });
-      }
-    } catch (error) {
-      return res.status(500).json({
-        message: 'Login failed'
+// Middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+
+// Health check
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    message: 'Standard Node.js server is working!'
+  });
+});
+
+// Test endpoint
+app.get('/api/test', (req, res) => {
+  res.json({
+    message: 'Test endpoint working!'
+  });
+});
+
+// Login endpoint
+app.post('/api/login', (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+    
+    if (email === 'admin@vibe.com' && password === 'admin123') {
+      res.json({
+        success: true,
+        message: 'Login successful!'
+      });
+    } else {
+      res.status(401).json({
+        message: 'Invalid credentials'
       });
     }
+  } catch (error) {
+    res.status(500).json({
+      message: 'Login failed'
+    });
   }
+});
 
-  // Default response - simple HTML
-  res.status(200).send(`
+// Serve static files
+app.use(express.static('client/dist'));
+
+// Catch-all route
+app.use('*', (req, res) => {
+  res.send(`
     <!DOCTYPE html>
     <html>
       <head>
@@ -54,7 +65,7 @@ export default function handler(req, res) {
       <body>
         <div class="container">
           <h1>LocalVibe</h1>
-          <p>Basic serverless function is working! 🚀</p>
+          <p>Standard Node.js server is working! 🚀</p>
           
           <h3>Test these endpoints:</h3>
           <div class="endpoint">
@@ -65,11 +76,14 @@ export default function handler(req, res) {
           </div>
           
           <h3>Status:</h3>
-          <p style="color: #00ff88;">✅ Function deployed!</p>
-          <p style="color: #00ff88;">✅ No complex dependencies!</p>
+          <p style="color: #00ff88;">✅ Server deployed!</p>
+          <p style="color: #00ff88;">✅ No more runtime errors!</p>
           <p style="color: #00ff88;">✅ Should work now!</p>
         </div>
       </body>
     </html>
   `);
-}
+});
+
+// Export for Vercel
+export default app;
