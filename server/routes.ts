@@ -97,6 +97,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
+  // Database test route
+  app.get('/api/test-db', async (req, res) => {
+    try {
+      const result = await storage.getUser('test');
+      res.json({ 
+        message: "Database connection successful", 
+        timestamp: new Date().toISOString(),
+        dbTest: "OK"
+      });
+    } catch (error) {
+      res.status(500).json({ 
+        message: "Database connection failed", 
+        error: error.message,
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
   // Production login routes (available in both development and production)
   app.post('/api/login', async (req: any, res) => {
     try {
