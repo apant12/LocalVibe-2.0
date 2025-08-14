@@ -1,8 +1,28 @@
 import 'dotenv/config';
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
-import { db, pool } from "./db";
-import { storage } from "./storage";
+
+// Try to import database modules with fallback
+let db: any = null;
+let pool: any = null;
+let storage: any = null;
+
+// Function to initialize database modules
+async function initializeDatabase() {
+  try {
+    const dbModule = await import("./db");
+    db = dbModule.db;
+    pool = dbModule.pool;
+    
+    const storageModule = await import("./storage");
+    storage = storageModule.storage;
+    
+    console.log("Database modules imported successfully");
+  } catch (error) {
+    console.warn("Could not import database modules:", error instanceof Error ? error.message : 'Unknown error');
+    console.log("Continuing without database support");
+  }
+}
 
 // Basic server with session support
 const app = express();
@@ -23,7 +43,12 @@ app.use(session({
 
 // Simple health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    database: db ? 'connected' : 'not available',
+    storage: storage ? 'available' : 'not available'
+  });
 });
 
 // Simple test route
@@ -37,7 +62,8 @@ app.get('/api/test-db', async (req, res) => {
     if (!db) {
       return res.status(500).json({ 
         message: 'Database not connected',
-        error: 'DATABASE_URL not set or connection failed'
+        error: 'DATABASE_URL not set or connection failed',
+        timestamp: new Date().toISOString()
       });
     }
     
@@ -65,15 +91,19 @@ app.post('/api/login', async (req, res) => {
     
     // Check if database is available
     if (db && storage) {
-      // Try to find user in database
-      const existingUser = await storage.getUserByEmail(email);
-      
-      if (existingUser) {
-        // User exists, set session
-        req.session.userId = existingUser.id;
-        req.session.user = existingUser;
-        res.json({ success: true, user: existingUser, source: 'database' });
-        return;
+      try {
+        // Try to find user in database
+        const existingUser = await storage.getUserByEmail(email);
+        
+        if (existingUser) {
+          // User exists, set session
+          req.session.userId = existingUser.id;
+          req.session.user = existingUser;
+          res.json({ success: true, user: existingUser, source: 'database' });
+          return;
+        }
+      } catch (dbError) {
+        console.log('Database lookup failed, falling back to hardcoded:', dbError instanceof Error ? dbError.message : 'Unknown error');
       }
     }
     
@@ -161,6 +191,17 @@ app.use('*', (req, res) => {
 
 // Start the server
 const port = parseInt(process.env.PORT || '5000', 10);
-app.listen(port, () => {
-  console.log(`Basic server with auth running on port ${port}`);
+
+// Initialize database and start server
+initializeDatabase().then(() => {
+  app.listen(port, () => {
+    console.log(`Enhanced server with database support running on port ${port}`);
+    console.log(`Database status: ${db ? 'Connected' : 'Not available'}`);
+    console.log(`Storage status: ${storage ? 'Available' : 'Not available'}`);
+  });
+}).catch((error) => {
+  console.error('Failed to initialize database, starting server without it:', error);
+  app.listen(port, () => {
+    console.log(`Server running without database support on port ${port}`);
+  });
 });
