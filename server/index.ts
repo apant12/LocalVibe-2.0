@@ -3,6 +3,11 @@ import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import bcrypt from "bcryptjs";
 
+// Email validation helper
+const isValidEmail = (email: string) => {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+};
+
 // Try to import database modules with fallback
 let db: any = null;
 let pool: any = null;
@@ -256,6 +261,167 @@ app.post('/api/login', async (req, res) => {
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ message: 'Login failed' });
+  }
+});
+
+// Get user profile
+app.get('/api/profile', (req, res) => {
+  try {
+    if (!req.session.userId) {
+      return res.status(401).json({ message: 'Not authenticated' });
+    }
+
+    // For now, return session user data
+    // When database is connected, this will fetch from storage
+    if (req.session.user) {
+      res.json({ 
+        success: true, 
+        user: req.session.user,
+        source: 'session'
+      });
+    } else {
+      res.status(404).json({ message: 'User profile not found' });
+    }
+  } catch (error) {
+    console.error('Profile fetch error:', error);
+    res.status(500).json({ message: 'Failed to fetch profile' });
+  }
+});
+
+// Update user profile
+app.put('/api/profile', async (req, res) => {
+  try {
+    if (!req.session.userId) {
+      return res.status(401).json({ message: 'Not authenticated' });
+    }
+
+    const { firstName, lastName, email, bio, phone, location } = req.body;
+    
+    // Basic validation
+    if (!firstName || !lastName || !email) {
+      return res.status(400).json({ 
+        message: 'First name, last name, and email are required' 
+      });
+    }
+
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ 
+        message: 'Please enter a valid email address' 
+      });
+    }
+
+    // Update session user data
+    if (req.session.user) {
+      const updatedUser = {
+        ...req.session.user,
+        firstName,
+        lastName,
+        email,
+        bio: bio || req.session.user.bio,
+        phone: phone || req.session.user.phone,
+        location: location || req.session.user.location,
+        updatedAt: new Date()
+      };
+
+      req.session.user = updatedUser;
+
+      // Try to update in database if available
+      if (db && storage) {
+        try {
+          await storage.upsertUser(updatedUser);
+        } catch (dbError) {
+          console.log('Could not update user in database:', dbError instanceof Error ? dbError.message : 'Unknown error');
+        }
+      }
+
+      res.json({ 
+        success: true, 
+        user: updatedUser,
+        message: 'Profile updated successfully',
+        source: 'session'
+      });
+    } else {
+      res.status(404).json({ message: 'User profile not found' });
+    }
+  } catch (error) {
+    console.error('Profile update error:', error);
+    res.status(500).json({ message: 'Failed to update profile' });
+  }
+});
+
+// Upload profile picture (placeholder for now)
+app.post('/api/profile/picture', (req, res) => {
+  try {
+    if (!req.session.userId) {
+      return res.status(401).json({ message: 'Not authenticated' });
+    }
+
+    // For now, return a placeholder response
+    // When we add file upload, this will handle image uploads
+    res.json({ 
+      success: true, 
+      message: 'Profile picture upload endpoint ready',
+      note: 'File upload implementation coming soon',
+      source: 'placeholder'
+    });
+  } catch (error) {
+    console.error('Profile picture upload error:', error);
+    res.status(500).json({ message: 'Failed to upload profile picture' });
+  }
+});
+
+// Get user statistics
+app.get('/api/profile/stats', (req, res) => {
+  try {
+    if (!req.session.userId) {
+      return res.status(401).json({ message: 'Not authenticated' });
+    }
+
+    // For now, return placeholder stats
+    // When database is connected, this will fetch real statistics
+    const stats = {
+      totalExperiences: 0,
+      totalBookings: 0,
+      totalReviews: 0,
+      memberSince: req.session.user?.createdAt || new Date(),
+      lastActive: new Date(),
+      profileCompletion: 80, // Placeholder percentage
+      source: 'placeholder'
+    };
+
+    res.json({ 
+      success: true, 
+      stats,
+      message: 'User statistics retrieved'
+    });
+  } catch (error) {
+    console.error('Stats fetch error:', error);
+    res.status(500).json({ message: 'Failed to fetch user statistics' });
+  }
+});
+
+// Get all users (admin only)
+app.get('/api/users', (req, res) => {
+  try {
+    if (!req.session.userId || !req.session.user?.isAdmin) {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
+
+    // For now, return session user data
+    // When database is connected, this will fetch all users from storage
+    if (req.session.user) {
+      res.json({ 
+        success: true, 
+        users: [req.session.user],
+        total: 1,
+        source: 'session'
+      });
+    } else {
+      res.status(404).json({ message: 'No users found' });
+    }
+  } catch (error) {
+    console.error('Users fetch error:', error);
+    res.status(500).json({ message: 'Failed to fetch users' });
   }
 });
 
