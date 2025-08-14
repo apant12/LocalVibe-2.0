@@ -2,28 +2,18 @@
   "version": 2,
   "builds": [
     {
-      "src": "client/package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "dist"
-      }
-    },
-    {
-      "src": "server/index.ts",
+      "src": "package.json",
       "use": "@vercel/node"
     }
   ],
-  "rewrites": [
+  "routes": [
     {
-      "source": "/api/(.*)",
-      "destination": "/server/index.ts"
+      "src": "/api/(.*)",
+      "dest": "/package.json"
     },
     {
-      "source": "/(.*)",
-      "destination": "/index.html"
+      "src": "/(.*)",
+      "dest": "/package.json"
     }
-  ],
-  "env": {
-    "NODE_ENV": "production"
-  }
+  ]
 }
