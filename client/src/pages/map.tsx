@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import ExperienceMap from '@/components/ExperienceMap';
+import EventsMap from '@/components/EventsMap';
 import { ArrowLeft, Search, Filter, MapPin, Clock, Star, Users, Heart } from 'lucide-react';
 import { Link } from 'wouter';
 import { useLocation } from '@/components/LocationContext';
@@ -31,7 +31,7 @@ interface Experience {
 }
 
 export default function MapPage() {
-  const { city } = useLocation();
+  const { currentCity } = useLocation();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedExperience, setSelectedExperience] = useState<Experience | null>(null);
   const [filterType, setFilterType] = useState<'all' | 'free' | 'paid'>('all');
@@ -170,12 +170,10 @@ export default function MapPage() {
       <div className="max-w-7xl mx-auto px-4 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Map */}
-          <div className="lg:col-span-2">
-            <ExperienceMap
+          <div className="lg:col-span-2 h-[600px]">
+            <EventsMap
               experiences={experiencesWithLocation}
-              selectedExperience={selectedExperience}
-              onExperienceSelect={setSelectedExperience}
-              userLocation={userLocation}
+              onExperienceClick={setSelectedExperience}
             />
           </div>
 

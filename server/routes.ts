@@ -13,6 +13,19 @@ import { z } from "zod";
 import Stripe from "stripe";
 import bcrypt from "bcryptjs";
 
+// Helper function to calculate distance between two coordinates (Haversine formula)
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // Earth's radius in kilometers
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
 // Check if we're in local development mode
 const isLocalDevelopment = process.env.NODE_ENV === "development" && !process.env.REPL_ID;
 
@@ -285,6 +298,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Filter for Ticketmaster events only
       let ticketmasterEvents = allExperiences.filter(exp => exp.externalSource === 'ticketmaster');
       
+      // Filter by city if provided
+      if (city && typeof city === 'string') {
+        ticketmasterEvents = ticketmasterEvents.filter(exp => {
+          if (!exp.location) return false;
+          return exp.location.toLowerCase().includes(city.toLowerCase());
+        });
+      }
+      
+      // Filter by coordinates if provided (radius-based filtering)
+      if (coordinates && typeof coordinates === 'string') {
+        const [lat, lng] = coordinates.split(',').map(Number);
+        if (!isNaN(lat) && !isNaN(lng)) {
+          ticketmasterEvents = ticketmasterEvents.filter(exp => {
+            if (!exp.latitude || !exp.longitude) return false;
+            const distance = calculateDistance(lat, lng, exp.latitude, exp.longitude);
+            return distance <= 50; // 50km radius
+          });
+        }
+      }
+      
       // Filter by date if provided (YYYY-MM-DD format)
       if (date && typeof date === 'string') {
         const selectedDate = new Date(date);
@@ -295,10 +328,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const eventDate = new Date(exp.startTime);
           return eventDate >= selectedDate && eventDate < nextDay;
         });
-
       }
 
-      res.json(ticketmasterEvents);
+      // Apply limit and offset
+      const limitNum = parseInt(limit as string);
+      const offsetNum = parseInt(offset as string);
+      const paginatedEvents = ticketmasterEvents.slice(offsetNum, offsetNum + limitNum);
+
+      res.json(paginatedEvents);
     } catch (error) {
       console.error("Error fetching experiences:", error);
       res.status(500).json({ message: "Failed to fetch experiences" });
