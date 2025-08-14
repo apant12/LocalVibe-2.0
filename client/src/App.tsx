@@ -24,9 +24,18 @@ const HomeNew = lazy(() => import("@/pages/home-new"));
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
 
+  // Show loading spinner only briefly while checking auth
+  if (isLoading) {
+    return (
+      <div className="h-screen bg-black flex items-center justify-center">
+        <div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full"></div>
+      </div>
+    );
+  }
+
   return (
     <Switch>
-      {isLoading || !isAuthenticated ? (
+      {!isAuthenticated ? (
         <>
           <Route path="/" component={Landing} />
           <Route path="/login" component={Login} />

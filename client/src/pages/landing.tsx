@@ -1,12 +1,13 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 
 export default function Landing() {
+  const [, setLocation] = useLocation();
 
   const handleLogin = () => {
-    // Navigate to login page instead of auto-login
-    window.location.href = '/login';
+    // Navigate to login page using Wouter
+    setLocation('/login');
   };
 
   return (
