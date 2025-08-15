@@ -1,316 +1,190 @@
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { Link } from "wouter";
-import { useToast } from "@/hooks/use-toast";
+import React, { useState } from 'react';
+import { useAuth } from '../hooks/useAuth';
 
-export default function Login() {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const [formData, setFormData] = useState({
-    email: '',
-    password: ''
-  });
+interface LoginPageProps {
+  onSwitchToSignup: () => void;
+}
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
-  };
+const LoginPage: React.FC<LoginPageProps> = ({ onSwitchToSignup }) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const { login } = useAuth();
 
-  const handleLocalLogin = async () => {
-    setIsLoggingIn(true);
-    try {
-      const response = await fetch('/api/login', {
-        method: 'GET',
-        credentials: 'include',
-      });
-
-      if (response.ok) {
-        await queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
-        toast({
-          title: "Login successful!",
-          description: "Welcome to LocalVibe!",
-        });
-        // Redirect to home page after successful login
-        setTimeout(() => {
-          window.location.href = "/";
-        }, 1000);
-      } else {
-        console.error('Login failed');
-        toast({
-          title: "Login failed",
-          description: "There was an error logging you in.",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      console.error('Login error:', error);
-      toast({
-        title: "Login failed",
-        description: "There was an error logging you in.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoggingIn(false);
-    }
-  };
-
-  const handleFormLogin = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoggingIn(true);
-    try {
-      const response = await fetch('/api/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify(formData),
-      });
+    setIsLoading(true);
+    setError('');
 
-      if (response.ok) {
-        await queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
-        toast({
-          title: "Login successful!",
-          description: "Welcome to LocalVibe!",
-        });
-        // Redirect to home page after successful login
+    try {
+      const result = await login(email, password);
+      if (result.success) {
+        console.log('Login successful, should navigate to main app');
+        // Force a small delay to ensure state updates
         setTimeout(() => {
-          window.location.href = "/";
-        }, 1000);
+          window.location.reload();
+        }, 100);
       } else {
-        const data = await response.json();
-        toast({
-          title: "Login failed",
-          description: data.message || "Invalid email or password.",
-          variant: "destructive",
-        });
+        setError(result.message || 'Invalid email or password');
       }
-    } catch (error) {
-      console.error('Login error:', error);
-      toast({
-        title: "Login failed",
-        description: "There was an error logging you in.",
-        variant: "destructive",
-      });
+    } catch (err) {
+      setError('Invalid email or password');
     } finally {
-      setIsLoggingIn(false);
-    }
-  };
-
-  const handleGoogleLogin = async () => {
-    setIsLoggingIn(true);
-    try {
-      const response = await fetch('/api/auth/google');
-      if (response.ok) {
-        const data = await response.json();
-        if (data.redirectUrl) {
-          window.location.href = data.redirectUrl;
-        } else {
-          toast({
-            title: "Google login not configured",
-            description: "Please use email/password login for now.",
-            variant: "destructive",
-          });
-        }
-      } else {
-        toast({
-          title: "Google login not available",
-          description: "Please use email/password login for now.",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      console.error('Google login error:', error);
-      toast({
-        title: "Google login not available",
-        description: "Please use email/password login for now.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoggingIn(false);
-    }
-  };
-
-  const handleAppleLogin = async () => {
-    setIsLoggingIn(true);
-    try {
-      const response = await fetch('/api/auth/apple');
-      if (response.ok) {
-        const data = await response.json();
-        if (data.redirectUrl) {
-          window.location.href = data.redirectUrl;
-        } else {
-          toast({
-            title: "Apple login not configured",
-            description: "Please use email/password login for now.",
-            variant: "destructive",
-          });
-        }
-      } else {
-        toast({
-          title: "Apple login not available",
-          description: "Please use email/password login for now.",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      console.error('Apple login error:', error);
-      toast({
-        title: "Apple login not available",
-        description: "Please use email/password login for now.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoggingIn(false);
+      setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-black text-white flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <Card className="bg-surface border-gray-800">
-          <CardHeader className="text-center">
-            <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center mb-4 mx-auto">
-              <i className="fas fa-map-marker-alt text-2xl text-white"></i>
+    <div className="min-h-screen relative overflow-hidden">
+      {/* Background Video/Image */}
+      <div className="absolute inset-0 z-0">
+        <div className="absolute inset-0 bg-gradient-to-br from-purple-900 via-pink-800 to-indigo-900"></div>
+        <div className="absolute inset-0 bg-black/40"></div>
+        {/* Animated background elements */}
+        <div className="absolute top-20 left-20 w-72 h-72 bg-purple-500/20 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute bottom-20 right-20 w-96 h-96 bg-pink-500/20 rounded-full blur-3xl animate-pulse delay-1000"></div>
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-indigo-500/20 rounded-full blur-3xl animate-pulse delay-500"></div>
+      </div>
+
+      {/* Content */}
+      <div className="relative z-10 min-h-screen flex items-center justify-center p-4">
+        <div className="w-full max-w-md">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-purple-500 to-pink-500 rounded-2xl mb-6 shadow-lg">
+              <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
             </div>
-            <CardTitle className="text-2xl font-bold">
-              Welcome to <span className="text-primary">LocalVibe</span>
-            </CardTitle>
-            <p className="text-gray-400 mt-2">
-              Sign in to discover amazing local experiences
+            <h1 className="text-4xl font-bold text-white mb-2 bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
+              Welcome Back
+            </h1>
+            <p className="text-gray-300 text-lg">
+              Sign in to continue your LocalVibe journey
             </p>
-          </CardHeader>
+          </div>
 
-          <CardContent className="space-y-4">
-            {/* Email/Password Login Form */}
-            <form onSubmit={handleFormLogin} className="space-y-4">
+          {/* Login Form */}
+          <div className="backdrop-blur-xl bg-white/10 rounded-3xl p-8 border border-white/20 shadow-2xl">
+            <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Email Field */}
               <div>
-                <Label htmlFor="email" className="text-white">Email</Label>
-                <Input
-                  id="email"
-                  name="email"
-                  type="email"
-                  value={formData.email}
-                  onChange={handleInputChange}
-                  className="bg-gray-800 border-gray-700 text-white"
-                  required
-                />
+                <label htmlFor="email" className="block text-sm font-medium text-gray-200 mb-2">
+                  Email Address
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" />
+                    </svg>
+                  </div>
+                  <input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full pl-10 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl text-white placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm"
+                    placeholder="Enter your email"
+                    required
+                  />
+                </div>
               </div>
 
+              {/* Password Field */}
               <div>
-                <Label htmlFor="password" className="text-white">Password</Label>
-                <Input
-                  id="password"
-                  name="password"
-                  type="password"
-                  value={formData.password}
-                  onChange={handleInputChange}
-                  className="bg-gray-800 border-gray-700 text-white"
-                  required
-                />
+                <label htmlFor="password" className="block text-sm font-medium text-gray-200 mb-2">
+                  Password
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                  </div>
+                  <input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full pl-10 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl text-white placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm"
+                    placeholder="Enter your password"
+                    required
+                  />
+                </div>
               </div>
 
-              <Button
+              {/* Error Message */}
+              {error && (
+                <div className="bg-red-500/20 border border-red-500/30 rounded-xl p-3 text-red-200 text-sm">
+                  {error}
+                </div>
+              )}
+
+              {/* Submit Button */}
+              <button
                 type="submit"
-                disabled={isLoggingIn}
-                className="w-full bg-primary hover:bg-primary/90 text-black font-semibold py-3 px-4 rounded-xl"
+                disabled={isLoading}
+                className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-4 px-6 rounded-2xl transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-transparent disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
               >
-                {isLoggingIn ? (
-                  <>
-                    <div className="animate-spin w-4 h-4 border-2 border-black border-t-transparent rounded-full mr-2"></div>
-                    Signing in...
-                  </>
+                {isLoading ? (
+                  <div className="flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                    Signing In...
+                  </div>
                 ) : (
-                  <>
-                    <i className="fas fa-sign-in-alt mr-2"></i>
-                    Sign In
-                  </>
+                  'Sign In'
                 )}
-              </Button>
+              </button>
             </form>
 
-            <div className="relative my-6">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-700"></div>
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-surface text-gray-400">or</span>
-              </div>
+            {/* Divider */}
+            <div className="my-6 flex items-center">
+              <div className="flex-1 border-t border-white/20"></div>
+              <span className="px-4 text-gray-300 text-sm">or</span>
+              <div className="flex-1 border-t border-white/20"></div>
             </div>
 
-            {/* OAuth Buttons */}
-            <Button
-              onClick={handleGoogleLogin}
-              disabled={isLoggingIn}
-              className="w-full bg-white text-black hover:bg-gray-100 font-semibold py-3 px-4 rounded-xl"
-            >
-              <i className="fab fa-google mr-3 text-red-500"></i>
-              Continue with Google
-            </Button>
-
-            <Button
-              onClick={handleAppleLogin}
-              disabled={isLoggingIn}
-              className="w-full bg-black text-white hover:bg-gray-900 font-semibold py-3 px-4 rounded-xl border border-gray-700"
-            >
-              <i className="fab fa-apple mr-3"></i>
-              Continue with Apple
-            </Button>
-
-            <div className="relative my-6">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-700"></div>
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-surface text-gray-400">or</span>
-              </div>
+            {/* Sign Up Link */}
+            <div className="text-center">
+              <p className="text-gray-300 text-sm">
+                Don't have an account?{' '}
+                <button
+                  onClick={onSwitchToSignup}
+                  className="text-purple-400 hover:text-purple-300 font-semibold transition-colors duration-300"
+                >
+                  Sign up here
+                </button>
+              </p>
             </div>
 
-            {/* Quick Development Login */}
-            <Button
-              onClick={handleLocalLogin}
-              disabled={isLoggingIn}
-              className="w-full bg-orange-600 hover:bg-orange-700 text-white font-semibold py-3 px-4 rounded-xl"
-            >
-              {isLoggingIn ? (
-                <>
-                  <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
-                  Logging in...
-                </>
-              ) : (
-                <>
-                  <i className="fas fa-rocket mr-2"></i>
-                  Quick Start (Development)
-                </>
-              )}
-            </Button>
+            {/* Demo Credentials */}
+            <div className="mt-6 p-4 bg-white/5 rounded-xl border border-white/10">
+              <p className="text-gray-300 text-xs text-center mb-2">Demo Credentials:</p>
+              <div className="text-gray-400 text-xs text-center space-y-1">
+                <p>Email: user@example.com</p>
+                <p>Password: password123</p>
+              </div>
+            </div>
+          </div>
 
-            <p className="text-xs text-gray-500 text-center mt-4">
-              By continuing, you agree to our Terms of Service and Privacy Policy
+          {/* Footer */}
+          <div className="text-center mt-8">
+            <p className="text-gray-400 text-sm">
+              By signing in, you agree to our{' '}
+              <a href="#" className="text-purple-400 hover:text-purple-300 transition-colors duration-300">
+                Terms of Service
+              </a>{' '}
+              and{' '}
+              <a href="#" className="text-purple-400 hover:text-purple-300 transition-colors duration-300">
+                Privacy Policy
+              </a>
             </p>
-          </CardContent>
-        </Card>
-
-        <div className="text-center mt-6">
-          <p className="text-gray-400 text-sm mb-2">
-            Don't have an account?{' '}
-            <Link href="/signup" className="text-primary hover:text-primary/80">
-              Sign up
-            </Link>
-          </p>
-          <Link href="/" className="text-gray-400 hover:text-white text-sm">
-            ← Back to Home
-          </Link>
+          </div>
         </div>
       </div>
     </div>
   );
-}
+};
+
+export default LoginPage;

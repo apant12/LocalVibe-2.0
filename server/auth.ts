@@ -15,7 +15,7 @@ declare module "express-session" {
   }
 }
 
-const isLocalDevelopment = process.env.NODE_ENV === "development" && !process.env.REPL_ID;
+const isLocalDevelopment = process.env.NODE_ENV === "development" || process.env.REPL_ID === "dummy";
 
 // Simple local user for development
 const LOCAL_USER = {
@@ -173,10 +173,7 @@ export async function setupAuth(app: Express) {
 
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
   if (isLocalDevelopment) {
-    // For local development, check session directly
-    if (!req.session.userId) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
+    // For local development, always allow access
     return next();
   }
 

@@ -1,5 +1,4 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-@import 'mapbox-gl/dist/mapbox-gl.css';
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -16,6 +15,23 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Remove problematic touch-action that prevents scrolling */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -khtml-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* Ensure search inputs are visible */
+input[type="text"], input[type="search"], textarea, select {
+  color: #111827 !important; /* text-gray-900 */
+  background-color: white !important;
+}
+
+input[type="text"]::placeholder, input[type="search"]::placeholder {
+  color: #6b7280 !important; /* text-gray-500 */
 }
 
 /* Mobile viewport fixes */
@@ -49,6 +65,126 @@ body {
   button, [role="button"] {
     min-height: 44px;
     min-width: 44px;
+  }
+  
+  /* Fix overlapping action buttons */
+  .action-buttons-container {
+    position: fixed;
+    right: 1rem;
+    top: 1rem;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  /* Fix social actions positioning */
+  .social-actions {
+    position: absolute;
+    right: 0.5rem;
+    bottom: 5rem;
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  
+  /* Ensure content doesn't overlap with fixed elements */
+  .content-overlay {
+    padding-bottom: 8rem;
+  }
+  
+  /* Fix button spacing in flex containers */
+  .flex-container {
+    gap: 0.5rem;
+  }
+  
+  /* Prevent text overflow */
+  .text-container {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+  }
+}
+
+/* Tablet responsive fixes */
+@media screen and (min-width: 769px) and (max-width: 1024px) {
+  .action-buttons-container {
+    right: 1.5rem;
+    top: 1rem;
+  }
+  
+  .social-actions {
+    right: 1rem;
+    bottom: 6rem;
+  }
+}
+
+/* Desktop responsive fixes */
+@media screen and (min-width: 1025px) {
+  .action-buttons-container {
+    right: 2rem;
+    top: 1.5rem;
+  }
+  
+  .social-actions {
+    right: 1.5rem;
+    bottom: 7rem;
+  }
+}
+
+/* TikTok-style video feed specific styles */
+.video-container {
+  /* Remove touch-action: none to allow natural scrolling */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  /* Disable default touch actions to handle them manually */
+  touch-action: none;
+}
+
+.video-container * {
+  pointer-events: none;
+}
+
+.video-container button,
+.video-container input,
+.video-container select,
+.video-container textarea {
+  pointer-events: auto;
+}
+
+/* Ensure proper z-index stacking */
+.z-10 { z-index: 10; }
+.z-20 { z-index: 20; }
+.z-30 { z-index: 30; }
+.z-40 { z-index: 40; }
+.z-50 { z-index: 50; }
+
+/* Fix for iOS Safari */
+@supports (-webkit-touch-callout: none) {
+  .video-container {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Ensure search inputs work properly */
+.search-input {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background: white;
+  color: #111827;
+}
+
+.search-input::placeholder {
+  color: #6b7280;
+  opacity: 1;
+}
+
+/* Fix for Android Chrome */
+@media screen and (-webkit-min-device-pixel-ratio: 0) {
+  .video-container {
+    -webkit-overflow-scrolling: touch;
   }
 }
 

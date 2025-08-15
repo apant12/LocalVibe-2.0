@@ -4,8 +4,28 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/useAuth";
 import { useLocation } from "@/components/LocationContext";
-import { Brain, TrendingUp, Users, Clock, MapPin, Star } from "lucide-react";
-import type { Experience } from "@shared/schema";
+import { Brain, TrendingUp, Users, Clock, MapPin, Star, Sparkles } from "lucide-react";
+
+interface Experience {
+  id: string;
+  title: string;
+  description?: string;
+  imageUrl?: string;
+  location: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  price: number;
+  currency: string;
+  type: 'free' | 'paid';
+  availability: string;
+  startTime?: string;
+  tags?: string[];
+  rating?: number;
+  reviewCount?: number;
+  likeCount?: number;
+  saveCount?: number;
+  viewCount?: number;
+}
 
 interface RecommendationScore {
   experienceId: string;
@@ -43,7 +63,7 @@ export default function RecommendationEngine() {
     if (!experiences.length || !user) return;
 
     const userPrefs: UserPreferences = {
-      categories: userInteractions?.favoriteCategories || ['Food & Drinks', 'Arts & Culture'],
+      categories: ['Food & Drinks', 'Arts & Culture'], // Default categories
       priceRange: [20, 100],
       timePreferences: ['evening', 'weekend'],
       locationRadius: 10,
@@ -54,8 +74,10 @@ export default function RecommendationEngine() {
       let score = 0;
       const reasons: string[] = [];
       
-      // Category preference matching (30% weight)
-      if (userPrefs.categories.includes(exp.categoryId)) {
+      // Category preference matching (30% weight) - use tags instead of categoryId
+      if (exp.tags && exp.tags.some(tag => userPrefs.categories.some(cat => 
+        tag.toLowerCase().includes(cat.toLowerCase())
+      ))) {
         score += 30;
         reasons.push('Matches your interests');
       }
@@ -66,21 +88,21 @@ export default function RecommendationEngine() {
         reasons.push('In your price range');
       }
 
-      // Rating and popularity (25% weight)
-      const ratingScore = (exp.averageRating / 5) * 25;
+      // Rating and popularity (25% weight) - use rating instead of averageRating
+      const ratingScore = ((exp.rating || 4.0) / 5) * 25;
       score += ratingScore;
-      if (exp.averageRating > 4.5) {
+      if ((exp.rating || 0) > 4.5) {
         reasons.push('Highly rated');
       }
 
       // Availability and timing (15% weight)
-      if (exp.availability === 'available') {
+      if (exp.availability === 'Available') {
         score += 15;
         reasons.push('Available now');
       }
 
-      // Social proof (10% weight)
-      if (exp.bookingCount > 50) {
+      // Social proof (10% weight) - use likeCount instead of bookingCount
+      if ((exp.likeCount || 0) > 50) {
         score += 10;
         reasons.push('Popular choice');
       }
@@ -180,11 +202,11 @@ export default function RecommendationEngine() {
                   </div>
                   <div className="flex items-center space-x-1 text-gray-400">
                     <Clock className="w-3 h-3" />
-                    <span>{experience.duration}min</span>
+                    <span>{experience.startTime ? 'Scheduled' : 'Flexible'}</span>
                   </div>
                   <div className="flex items-center space-x-1 text-yellow-500">
                     <Star className="w-3 h-3 fill-current" />
-                    <span>{experience.averageRating}</span>
+                    <span>{experience.rating || 'N/A'}</span>
                   </div>
                   <div className="text-primary font-semibold">
                     ${experience.price}
@@ -226,7 +248,7 @@ export default function RecommendationEngine() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
             <div className="space-y-1">
               <div className="text-lg font-bold text-primary">
-                {userInteractions?.favoriteCategories?.length || 3}
+                3
               </div>
               <div className="text-xs text-gray-400">Tracked Interests</div>
             </div>

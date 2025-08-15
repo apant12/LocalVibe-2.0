@@ -28,34 +28,57 @@ export default function VideoUploadStreaming({ onVideoUploaded, maxSizeMB = 100,
       setIsUploading(true);
       setUploadProgress(0);
 
-      // Create FormData for file upload
-      const formData = new FormData();
-      formData.append('video', file);
-      formData.append('title', `Video Upload ${new Date().toISOString()}`);
-
-      // Simulate progress updates
-      const progressInterval = setInterval(() => {
-        setUploadProgress(prev => {
-          if (prev >= 90) return prev;
-          return prev + Math.random() * 10;
-        });
-      }, 500);
-
       try {
-        // Upload to Mux service
-        const response = await apiRequest("POST", "/api/upload/video", formData);
+        // Step 1: Get upload URL from our server
+        const uploadResponse = await fetch('/api/upload/video', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include'
+        });
 
-        const result = await response.json();
-        
+        if (!uploadResponse.ok) {
+          throw new Error('Failed to get upload URL');
+        }
+
+        const uploadData = await uploadResponse.json();
+        const { uploadUrl, uploadId } = uploadData;
+
+        // Step 2: Upload directly to Mux
+        const formData = new FormData();
+        formData.append('file', file);
+
+        // Simulate progress updates during Mux upload
+        const progressInterval = setInterval(() => {
+          setUploadProgress(prev => {
+            if (prev >= 90) return prev;
+            return prev + Math.random() * 10;
+          });
+        }, 500);
+
+        const muxResponse = await fetch(uploadUrl, {
+          method: 'PUT',
+          body: file
+        });
+
+        if (!muxResponse.ok) {
+          throw new Error('Failed to upload to Mux');
+        }
+
         clearInterval(progressInterval);
         setUploadProgress(100);
-        
-        // Simulate video processing time
+
+        // Step 3: Wait for Mux to process the video
         await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        return result;
+
+        // For now, return a mock playback URL since we need to wait for Mux processing
+        return {
+          playbackUrl: `https://stream.mux.com/${uploadId}.m3u8`,
+          thumbnailUrl: 'https://via.placeholder.com/400x300/1f2937/ffffff?text=Video+Processing',
+          videoId: uploadId
+        };
       } catch (error) {
-        clearInterval(progressInterval);
         throw error;
       }
     },

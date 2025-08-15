@@ -7,13 +7,13 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 
 // Make sure to call `loadStripe` outside of a component's render to avoid
 // recreating the `Stripe` object on every render.
-if (!import.meta.env.VITE_STRIPE_PUBLIC_KEY) {
-  throw new Error('Missing required Stripe key: VITE_STRIPE_PUBLIC_KEY');
-}
-const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY);
+const stripePromise = import.meta.env.VITE_STRIPE_PUBLIC_KEY 
+  ? loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY)
+  : null;
 
 interface CheckoutFormProps {
   experienceTitle: string;
@@ -144,6 +144,24 @@ export default function Checkout() {
         <div className="text-center">
           <div className="animate-spin w-12 h-12 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4" />
           <p className="text-gray-300">Setting up your payment...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Check if Stripe is configured
+  if (!stripePromise) {
+    return (
+      <div className="min-h-screen bg-black text-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 bg-yellow-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+            <AlertTriangle className="w-6 h-6 text-yellow-500" />
+          </div>
+          <h2 className="text-xl font-bold mb-2">Payment System Unavailable</h2>
+          <p className="text-gray-300 mb-4">Stripe payment processing is not configured.</p>
+          <Button onClick={() => navigate('/bookings')} className="bg-primary hover:bg-primary/90">
+            Back to Bookings
+          </Button>
         </div>
       </div>
     );

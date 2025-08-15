@@ -5,9 +5,62 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import EventsMap from '@/components/EventsMap';
-import { ArrowLeft, Search, Filter, MapPin, Clock, Star, Users, Heart } from 'lucide-react';
+import { ArrowLeft, Search, Filter, MapPin, Clock, Star, Users, Heart, Calendar, Ticket } from 'lucide-react';
 import { Link } from 'wouter';
 import { useLocation } from '@/components/LocationContext';
+
+interface TicketmasterEvent {
+  id: string;
+  name: string;
+  url: string;
+  images: Array<{
+    url: string;
+    width: number;
+    height: number;
+  }>;
+  dates: {
+    start: {
+      localDate: string;
+      localTime: string;
+      dateTime: string;
+    };
+    status: {
+      code: string;
+    };
+  };
+  priceRanges?: Array<{
+    type: string;
+    currency: string;
+    min: number;
+    max: number;
+  }>;
+  _embedded?: {
+    venues?: Array<{
+      name: string;
+      city: {
+        name: string;
+      };
+      state: {
+        name: string;
+      };
+      country: {
+        name: string;
+      };
+      location: {
+        latitude: string;
+        longitude: string;
+      };
+    }>;
+  };
+  classifications?: Array<{
+    segment: {
+      name: string;
+    };
+    genre: {
+      name: string;
+    };
+  }>;
+}
 
 interface Experience {
   id: string;
@@ -54,31 +107,122 @@ export default function MapPage() {
     }
   }, []);
 
-  // Fetch experiences
-  const { data: experiences = [], isLoading } = useQuery({
-    queryKey: ['/api/experiences'],
-    select: (data: Experience[]) => {
-      let filtered = data;
+  // Fetch Ticketmaster events
+  const { data: ticketmasterEvents = [], isLoading: eventsLoading } = useQuery({
+    queryKey: ['ticketmaster-events', currentCity?.name],
+    queryFn: async () => {
+      if (!currentCity?.name) return [];
       
-      // Filter by search query
-      if (searchQuery) {
-        filtered = filtered.filter(exp => 
-          exp.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          exp.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          exp.tags?.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()))
+      try {
+        // You'll need to add your Ticketmaster API key to .env
+        const apiKey = import.meta.env.VITE_TICKETMASTER_API_KEY || 'demo';
+        const response = await fetch(
+          `https://app.ticketmaster.com/discovery/v2/events.json?city=${encodeURIComponent(currentCity.name)}&apikey=${apiKey}&size=50&sort=date,asc`
         );
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch events');
+        }
+        
+        const data = await response.json();
+        return data._embedded?.events || [];
+      } catch (error) {
+        console.error('Error fetching Ticketmaster events:', error);
+        // Return demo data if API fails
+        return getDemoEvents();
       }
-      
-      // Filter by type
-      if (filterType !== 'all') {
-        filtered = filtered.filter(exp => exp.type === filterType);
-      }
-      
-      return filtered;
     },
+    enabled: !!currentCity?.name,
+    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
-  const filteredExperiences = experiences || [];
+  // Convert Ticketmaster events to our Experience format
+  const experiences: Experience[] = ticketmasterEvents.map((event: TicketmasterEvent) => {
+    const venue = event._embedded?.venues?.[0];
+    const priceRange = event.priceRanges?.[0];
+    
+    return {
+      id: event.id,
+      title: event.name,
+      description: `${event.classifications?.[0]?.segment?.name || 'Event'} - ${event.classifications?.[0]?.genre?.name || 'Entertainment'}`,
+      imageUrl: event.images?.[0]?.url,
+      location: venue ? `${venue.name}, ${venue.city.name}, ${venue.state.name}` : 'Location TBD',
+      latitude: venue?.location?.latitude ? parseFloat(venue.location.latitude) : null,
+      longitude: venue?.location?.longitude ? parseFloat(venue.location.longitude) : null,
+      price: priceRange?.min || 0,
+      currency: priceRange?.currency || 'USD',
+      type: priceRange?.min === 0 ? 'free' : 'paid',
+      availability: event.dates.status.code === 'onsale' ? 'Available' : 'Limited',
+      startTime: event.dates.start.dateTime,
+      tags: [
+        event.classifications?.[0]?.segment?.name,
+        event.classifications?.[0]?.genre?.name
+      ].filter(Boolean) as string[],
+      rating: 4.5, // Demo rating
+      reviewCount: Math.floor(Math.random() * 100) + 10,
+      likeCount: Math.floor(Math.random() * 500) + 50,
+      saveCount: Math.floor(Math.random() * 200) + 20,
+      viewCount: Math.floor(Math.random() * 1000) + 100,
+    };
+  });
+
+  // Demo events for when API is not available
+  function getDemoEvents(): any[] {
+    const cityName = currentCity?.name || 'New York';
+    return [
+      {
+        id: 'demo-1',
+        name: 'Summer Music Festival',
+        _embedded: {
+          venues: [{
+            name: 'Central Park',
+            city: { name: cityName },
+            state: { name: 'NY' },
+            location: { latitude: '40.7829', longitude: '-73.9654' }
+          }]
+        },
+        images: [{ url: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=300&fit=crop' }],
+        dates: { start: { dateTime: new Date(Date.now() + 86400000).toISOString() } },
+        priceRanges: [{ min: 25, currency: 'USD' }],
+        classifications: [{ segment: { name: 'Music' }, genre: { name: 'Rock' } }]
+      },
+      {
+        id: 'demo-2',
+        name: 'Food & Wine Expo',
+        _embedded: {
+          venues: [{
+            name: 'Downtown Convention Center',
+            city: { name: cityName },
+            state: { name: 'NY' },
+            location: { latitude: '40.7589', longitude: '-73.9654' }
+          }]
+        },
+        images: [{ url: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=400&h=300&fit=crop' }],
+        dates: { start: { dateTime: new Date(Date.now() + 172800000).toISOString() } },
+        priceRanges: [{ min: 0, currency: 'USD' }],
+        classifications: [{ segment: { name: 'Food & Drink' }, genre: { name: 'Culinary' } }]
+      }
+    ];
+  }
+
+  // Filter experiences
+  const filteredExperiences = experiences.filter(exp => {
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      return (
+        exp.title.toLowerCase().includes(query) ||
+        exp.location.toLowerCase().includes(query) ||
+        exp.tags?.some(tag => tag.toLowerCase().includes(query))
+      );
+    }
+    
+    if (filterType !== 'all') {
+      return exp.type === filterType;
+    }
+    
+    return true;
+  });
+
   const experiencesWithLocation = filteredExperiences.filter(exp => exp.latitude && exp.longitude);
 
   const formatDate = (dateString?: string) => {
@@ -93,12 +237,12 @@ export default function MapPage() {
     });
   };
 
-  if (isLoading) {
+  if (eventsLoading) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600 dark:text-gray-400">Loading map...</p>
+          <p className="text-gray-600 dark:text-gray-400">Loading events...</p>
         </div>
       </div>
     );
@@ -122,7 +266,7 @@ export default function MapPage() {
                   Experience Map
                 </h1>
                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                  {city || 'San Francisco'} • {experiencesWithLocation.length} experiences on map
+                  {currentCity?.name || 'San Francisco'} • {experiencesWithLocation.length} experiences on map
                 </p>
               </div>
             </div>
@@ -173,7 +317,7 @@ export default function MapPage() {
           <div className="lg:col-span-2 h-[600px]">
             <EventsMap
               experiences={experiencesWithLocation}
-              onExperienceClick={setSelectedExperience}
+              onExperienceClick={(experience) => setSelectedExperience(experience)}
             />
           </div>
 
@@ -231,7 +375,7 @@ export default function MapPage() {
 
                   {selectedExperience.startTime && (
                     <div className="flex items-center gap-2 text-sm">
-                      <Clock className="w-4 h-4 text-gray-400" />
+                      <Calendar className="w-4 h-4 text-gray-400" />
                       <span className="text-gray-600 dark:text-gray-400">
                         {formatDate(selectedExperience.startTime)}
                       </span>

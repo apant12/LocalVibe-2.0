@@ -163,7 +163,7 @@ export default function ExperienceCard({ experience, onView, onLike, onSave, onB
         </div>
         
         {/* Action Buttons */}
-        <div className="flex space-x-3">
+        <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3">
           <Button
             onClick={() => onBook(experience)}
             className={`flex-1 font-bold py-4 px-6 rounded-2xl transition-all floating-action ${actionButton.className}`}
@@ -171,65 +171,94 @@ export default function ExperienceCard({ experience, onView, onLike, onSave, onB
             <i className={`${actionButton.icon} mr-2`}></i>
             {actionButton.text}
           </Button>
-          <Button
-            onClick={() => onSave(experience.id)}
-            className={`w-14 h-14 backdrop-blur hover:bg-surface rounded-2xl flex items-center justify-center transition-colors ${
-              experience.isSaved ? 'bg-primary/20 text-primary' : 'bg-surface/80'
-            }`}
-          >
-            <i className={`fas fa-heart text-xl ${experience.isSaved ? 'text-primary' : ''}`}></i>
-          </Button>
-          <Button
-            onClick={() => {
-              if (navigator.share) {
-                navigator.share({
-                  title: experience.title,
-                  text: experience.description,
-                  url: window.location.href,
-                });
-              } else {
-                navigator.clipboard.writeText(window.location.href);
-              }
-            }}
-            className="w-14 h-14 bg-surface/80 backdrop-blur hover:bg-surface rounded-2xl flex items-center justify-center transition-colors"
-          >
-            <i className="fas fa-share text-xl"></i>
-          </Button>
+          <div className="flex space-x-3 sm:flex-col sm:space-x-0 sm:space-y-3">
+            <Button
+              onClick={() => onSave(experience.id)}
+              className={`w-14 h-14 backdrop-blur hover:bg-surface rounded-2xl flex items-center justify-center transition-colors ${
+                experience.isSaved ? 'bg-primary/20 text-primary' : 'bg-surface/80'
+              }`}
+            >
+              <i className={`fas fa-heart text-xl ${experience.isSaved ? 'text-primary' : ''}`}></i>
+            </Button>
+            <Button
+              onClick={() => {
+                if (navigator.share) {
+                  navigator.share({
+                    title: experience.title,
+                    text: experience.description,
+                    url: window.location.href,
+                  });
+                } else {
+                  navigator.clipboard.writeText(window.location.href);
+                }
+              }}
+              className="w-14 h-14 bg-surface/80 backdrop-blur hover:bg-surface rounded-2xl flex items-center justify-center transition-colors"
+            >
+              <i className="fas fa-share text-xl"></i>
+            </Button>
+          </div>
         </div>
       </div>
       
       {/* Right Side Actions */}
-      <div className="absolute right-4 bottom-32 space-y-4">
-        <div className="flex flex-col items-center space-y-1 cursor-pointer">
-          <Button
-            onClick={() => onLike(experience.id)}
-            className={`w-12 h-12 backdrop-blur rounded-full flex items-center justify-center transition-colors ${
-              experience.isLiked ? 'bg-primary/20 text-primary' : 'bg-surface/80 hover:bg-primary/20'
-            }`}
-          >
-            <i className={`fas fa-heart text-xl ${experience.isLiked ? 'text-primary' : ''}`}></i>
-          </Button>
-          <span className="text-xs font-semibold">{experience.likeCount}</span>
-        </div>
-        
-        <div className="flex flex-col items-center space-y-1 cursor-pointer">
-          <Button className="w-12 h-12 bg-surface/80 backdrop-blur rounded-full flex items-center justify-center hover:bg-primary/20 transition-colors">
-            <i className="fas fa-comment text-xl"></i>
-          </Button>
-          <span className="text-xs font-semibold">{experience.reviewCount}</span>
-        </div>
-        
-        <div className="flex flex-col items-center space-y-1 cursor-pointer">
-          <Button
-            onClick={() => onSave(experience.id)}
-            className={`w-12 h-12 backdrop-blur rounded-full flex items-center justify-center transition-colors ${
-              experience.isSaved ? 'bg-secondary/20 text-secondary' : 'bg-surface/80 hover:bg-primary/20'
-            }`}
-          >
-            <i className={`fas fa-bookmark text-xl ${experience.isSaved ? 'text-secondary' : ''}`}></i>
-          </Button>
-          <span className="text-xs font-semibold">{experience.saveCount}</span>
-        </div>
+      <div className="absolute right-4 bottom-32 space-y-4 hidden sm:flex flex-col">
+        <button
+          onClick={() => onLike(experience.id)}
+          className="flex flex-col items-center space-y-1 group"
+        >
+          <div className={`p-3 rounded-full transition-all ${
+            experience.isLiked 
+              ? 'bg-red-500 scale-110' 
+              : 'bg-black/50 group-hover:bg-black/70'
+          }`}>
+            <i className={`fas fa-heart text-xl ${
+              experience.isLiked 
+                ? 'text-white' 
+                : 'text-white/80'
+            }`}></i>
+          </div>
+          <span className="text-white text-sm font-medium">
+            {experience.likeCount || 0}
+          </span>
+        </button>
+
+        <button
+          onClick={() => onSave(experience.id)}
+          className="flex flex-col items-center space-y-1 group"
+        >
+          <div className={`p-3 rounded-full transition-all ${
+            experience.isSaved 
+              ? 'bg-primary/20 scale-110' 
+              : 'bg-black/50 group-hover:bg-black/70'
+          }`}>
+            <i className={`fas fa-bookmark text-xl ${
+              experience.isSaved 
+                ? 'text-primary' 
+                : 'text-white/80'
+            }`}></i>
+          </div>
+          <span className="text-white text-sm font-medium">Save</span>
+        </button>
+
+        <button
+          onClick={() => {
+            if (navigator.share) {
+              navigator.share({
+                title: experience.title,
+                text: experience.description,
+                url: window.location.href,
+              });
+            } else {
+              navigator.clipboard.writeText(window.location.href);
+            }
+          }}
+          className="flex flex-col items-center space-y-1 group"
+        >
+          <div className="p-3 bg-black/50 group-hover:bg-black/70 rounded-full transition-all">
+            <i className="fas fa-share text-xl text-white/80"></i>
+          </div>
+          <span className="text-white text-sm font-medium">Share</span>
+        </button>
       </div>
     </div>
   );

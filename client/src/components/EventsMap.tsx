@@ -1,15 +1,27 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { MapPin, Calendar, Clock, DollarSign, Users, Star } from 'lucide-react';
-import type { Experience } from '@/types';
-import { useLocation } from '@/components/LocationContext';
 
-// Set your Mapbox token
-mapboxgl.accessToken = 'pk.eyJ1IjoiYXl1c2hwOTY0NSIsImEiOiJjbWU4dXY1NDEwOWt4MmtvZmsyZDJ6dHRuIn0.UEyAr9CrIiIiVWDDgX4ddw';
+interface Experience {
+  id: string;
+  title: string;
+  description?: string;
+  imageUrl?: string;
+  location: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  price: number;
+  currency: string;
+  type: 'free' | 'paid';
+  availability: string;
+  startTime?: string;
+  tags?: string[];
+  rating?: number;
+  reviewCount?: number;
+  likeCount?: number;
+  saveCount?: number;
+  viewCount?: number;
+}
 
 interface EventsMapProps {
   experiences: Experience[];
@@ -19,359 +31,165 @@ interface EventsMapProps {
 export default function EventsMap({ experiences, onExperienceClick }: EventsMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
-  const { currentCity } = useLocation();
-  const [selectedExperience, setSelectedExperience] = useState<Experience | null>(null);
-  const [showHeatMap, setShowHeatMap] = useState(false);
 
+  console.log("EventsMap component rendering with", experiences.length, "experiences");
+  
+  // Filter experiences with valid coordinates
+  const experiencesWithCoords = experiences.filter(exp => exp.latitude && exp.longitude);
+  
   useEffect(() => {
-    if (!mapContainer.current) return;
+    if (!mapContainer.current || experiencesWithCoords.length === 0) return;
 
-    // Initialize map
+    // Set Mapbox access token
+    const mapboxToken = import.meta.env.VITE_MAPBOX_TOKEN || 'pk.eyJ1IjoiZXhhbXBsZSIsImEiOiJjbGV4YW1wbGUifQ.example';
+    mapboxgl.accessToken = mapboxToken;
+
+    // Calculate center point
+    const centerLng = experiencesWithCoords.reduce((sum, exp) => sum + (exp.longitude || 0), 0) / experiencesWithCoords.length;
+    const centerLat = experiencesWithCoords.reduce((sum, exp) => sum + (exp.latitude || 0), 0) / experiencesWithCoords.length;
+
+    // Create map
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/dark-v11',
-      center: [currentCity.coordinates.lng, currentCity.coordinates.lat],
-      zoom: 11
+      style: 'mapbox://styles/mapbox/streets-v12',
+      center: [centerLng, centerLat],
+      zoom: 12
     });
 
     // Add navigation controls
-    map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
+    map.current.addControl(new mapboxgl.NavigationControl());
 
-    // Add geolocate control
-    map.current.addControl(
-      new mapboxgl.GeolocateControl({
-        positionOptions: {
-          enableHighAccuracy: true
-        },
-        trackUserLocation: true,
-        showUserHeading: true
-      }),
-      'top-right'
-    );
+    // Add markers for each experience
+    experiencesWithCoords.forEach((experience) => {
+      if (experience.latitude && experience.longitude) {
+        // Create custom marker element
+        const markerEl = document.createElement('div');
+        markerEl.className = 'custom-marker';
+        markerEl.innerHTML = `
+          <div class="w-8 h-8 rounded-full border-2 border-white shadow-lg flex items-center justify-center text-xs font-bold ${
+            experience.type === 'free' ? 'bg-green-500' : 'bg-orange-500'
+          }">
+            ${experience.type === 'free' ? 'F' : '$'}
+          </div>
+        `;
+
+        // Create popup
+        const popup = new mapboxgl.Popup({ offset: 25 })
+          .setHTML(`
+            <div class="p-3 max-w-xs">
+              <h3 class="font-semibold text-sm mb-1">${experience.title}</h3>
+              <p class="text-xs text-gray-600 mb-2">${experience.location}</p>
+              <div class="flex items-center justify-between text-xs">
+                <span class="font-medium">$${experience.price}</span>
+                <span class="text-gray-500">${experience.type}</span>
+              </div>
+            </div>
+          `);
+
+        // Add marker to map
+        new mapboxgl.Marker(markerEl)
+          .setLngLat([experience.longitude, experience.latitude])
+          .setPopup(popup)
+          .addTo(map.current!);
+
+        // Add click handler
+        markerEl.addEventListener('click', () => {
+          onExperienceClick?.(experience);
+        });
+      }
+    });
 
     // Cleanup
     return () => {
       if (map.current) {
         map.current.remove();
+        map.current = null;
       }
     };
-  }, [currentCity]);
+  }, [experiencesWithCoords, onExperienceClick]);
 
-  useEffect(() => {
-    if (!map.current || !experiences.length) return;
-
-    // Remove existing markers and layers
-    const existingMarkers = document.querySelectorAll('.mapboxgl-marker');
-    existingMarkers.forEach(marker => marker.remove());
-
-    if (map.current.getLayer('heatmap-layer')) {
-      map.current.removeLayer('heatmap-layer');
-    }
-    if (map.current.getSource('heatmap-source')) {
-      map.current.removeSource('heatmap-source');
-    }
-
-    // Add event markers
-    experiences.forEach((experience) => {
-      if (!experience.latitude || !experience.longitude) return;
-
-      // Create marker element
-      const markerEl = document.createElement('div');
-      markerEl.className = 'event-marker';
-      markerEl.style.width = '20px';
-      markerEl.style.height = '20px';
-      markerEl.style.borderRadius = '50%';
-      markerEl.style.backgroundColor = getMarkerColor(experience);
-      markerEl.style.border = '2px solid white';
-      markerEl.style.cursor = 'pointer';
-      markerEl.style.boxShadow = '0 2px 4px rgba(0,0,0,0.3)';
-
-      // Create popup
-      const popup = new mapboxgl.Popup({ offset: 25 }).setHTML(`
-        <div class="p-3 max-w-xs">
-          <h3 class="font-semibold text-lg mb-2">${experience.title || 'Untitled Event'}</h3>
-          <p class="text-gray-600 text-sm mb-2">${experience.description?.substring(0, 100) || 'No description available'}...</p>
-          <div class="flex items-center text-sm text-gray-500 mb-2">
-            <MapPin className="w-4 h-4 mr-1" />
-            ${experience.location || 'Location not specified'}
+  if (experiencesWithCoords.length === 0) {
+    return (
+      <div className="w-full h-full bg-gray-100 dark:bg-gray-800 rounded-lg flex items-center justify-center">
+        <div className="text-center text-gray-500 dark:text-gray-400">
+          <div className="w-16 h-16 mx-auto mb-4">
+            <svg className="w-full h-full" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
           </div>
-          ${experience.startTime ? `
-            <div class="flex items-center text-sm text-gray-500 mb-2">
-              <Calendar className="w-4 h-4 mr-1" />
-              ${new Date(experience.startTime).toLocaleDateString()}
-            </div>
-          ` : ''}
-          ${experience.price ? `
-            <div class="flex items-center text-sm text-gray-500">
-              <DollarSign className="w-4 h-4 mr-1" />
-              $${experience.price}
-            </div>
-          ` : ''}
+          <h3 className="text-lg font-semibold mb-2">No Events Found</h3>
+          <p className="text-sm">No events with location data available</p>
         </div>
-      `);
+      </div>
+    );
+  }
 
-      // Add marker to map
-      new mapboxgl.Marker(markerEl)
-        .setLngLat([experience.longitude, experience.latitude])
-        .setPopup(popup)
-        .addTo(map.current);
-
-      // Add click event
-      markerEl.addEventListener('click', () => {
-        setSelectedExperience(experience);
-        if (onExperienceClick) {
-          onExperienceClick(experience);
-        }
-      });
-    });
-
-    // Add heat map if enabled
-    if (showHeatMap) {
-      const heatmapData = experiences
-        .filter(exp => exp.latitude && exp.longitude)
-        .map(exp => ({
-          type: 'Feature',
-          geometry: {
-            type: 'Point',
-            coordinates: [exp.longitude, exp.latitude]
-          },
-          properties: {
-            intensity: getHeatmapIntensity(exp)
-          }
-        }));
-
-      map.current.addSource('heatmap-source', {
-        type: 'geojson',
-        data: {
-          type: 'FeatureCollection',
-          features: heatmapData
-        }
-      });
-
-      map.current.addLayer({
-        id: 'heatmap-layer',
-        type: 'heatmap',
-        source: 'heatmap-source',
-        paint: {
-          'heatmap-weight': [
-            'interpolate',
-            ['linear'],
-            ['get', 'intensity'],
-            0, 0,
-            10, 1
-          ],
-          'heatmap-intensity': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            0, 1,
-            9, 3
-          ],
-          'heatmap-color': [
-            'interpolate',
-            ['linear'],
-            ['heatmap-density'],
-            0, 'rgba(0, 0, 255, 0)',
-            0.2, 'rgba(0, 0, 255, 0.5)',
-            0.4, 'rgba(0, 255, 255, 0.8)',
-            0.6, 'rgba(0, 255, 0, 0.8)',
-            0.8, 'rgba(255, 255, 0, 0.8)',
-            1, 'rgba(255, 0, 0, 0.8)'
-          ],
-          'heatmap-radius': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            0, 2,
-            9, 20
-          ],
-          'heatmap-opacity': 0.8
-        }
-      });
-    }
-  }, [experiences, showHeatMap, onExperienceClick]);
-
-  // Update map center when city changes
-  useEffect(() => {
-    if (map.current) {
-      map.current.flyTo({
-        center: [currentCity.coordinates.lng, currentCity.coordinates.lat],
-        zoom: 11,
-        duration: 2000
-      });
-    }
-  }, [currentCity]);
-
-  const getMarkerColor = (experience: Experience): string => {
-    if (experience.type === 'free') return '#10B981'; // Green for free
-    if (experience.price && Number(experience.price) > 100) return '#EF4444'; // Red for expensive
-    if (experience.price && Number(experience.price) > 50) return '#F59E0B'; // Orange for medium
-    return '#3B82F6'; // Blue for default
-  };
-
-  const getHeatmapIntensity = (experience: Experience): number => {
-    let intensity = 1;
-    
-    // Increase intensity based on price (more expensive = more popular)
-    if (experience.price) {
-      intensity += Math.min(Number(experience.price) / 50, 5);
-    }
-    
-    // Increase intensity for popular categories
-    if (experience.categoryId) {
-      const popularCategories = ['music', 'sports', 'food', 'art'];
-      if (popularCategories.includes(experience.categoryId)) {
-        intensity += 2;
-      }
-    }
-    
-    return intensity;
-  };
+  // Check if Mapbox token is available
+  const mapboxToken = import.meta.env.VITE_MAPBOX_TOKEN;
+  const hasValidToken = mapboxToken && !mapboxToken.includes('example');
 
   return (
-    <div className="relative w-full h-full">
-      {/* Map Container */}
-      <div ref={mapContainer} className="w-full h-full rounded-lg" />
-      
-      {/* Controls Overlay */}
-      <div className="absolute top-4 left-4 z-10 space-y-2">
-        <Button
-          variant={showHeatMap ? "default" : "secondary"}
-          size="sm"
-          onClick={() => setShowHeatMap(!showHeatMap)}
-          className="bg-black/80 text-white hover:bg-black/90"
-        >
-          {showHeatMap ? 'Hide' : 'Show'} Heat Map
-        </Button>
-        
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => {
-            if (map.current) {
-              map.current.flyTo({
-                center: [currentCity.coordinates.lng, currentCity.coordinates.lat],
-                zoom: 11,
-                duration: 1000
-              });
-            }
-          }}
-          className="bg-black/80 text-white hover:bg-black/90"
-        >
-          Reset View
-        </Button>
-      </div>
-
-      {/* City Info Overlay */}
-      <div className="absolute top-4 right-4 z-10">
-        <Card className="bg-black/80 text-white border-gray-700">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg">{currentCity.name}</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <div className="text-sm text-gray-300">
-              <p>{experiences.length} events found</p>
-              <p className="text-xs text-gray-400">
-                {currentCity.coordinates.lat.toFixed(4)}, {currentCity.coordinates.lng.toFixed(4)}
-              </p>
+    <div className="w-full h-full bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 relative overflow-hidden">
+      {hasValidToken ? (
+        // Real Mapbox map
+        <div ref={mapContainer} className="w-full h-full" />
+      ) : (
+        // Placeholder with better styling
+        <div className="w-full h-full bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-800 dark:to-gray-900 relative">
+          {/* Map Grid */}
+          <div className="absolute inset-0 opacity-20">
+            <div className="w-full h-full" style={{
+              backgroundImage: `
+                linear-gradient(rgba(0,0,0,0.1) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0,0,0,0.1) 1px, transparent 1px)
+              `,
+              backgroundSize: '20px 20px'
+            }} />
+          </div>
+          
+          {/* Event Markers */}
+          {experiencesWithCoords.map((experience, index) => {
+            // Calculate relative position on map (simplified positioning)
+            const x = 20 + (index % 3) * 30; // 3 columns
+            const y = 20 + Math.floor(index / 3) * 25; // Rows
+            
+            return (
+              <div
+                key={experience.id}
+                className="absolute cursor-pointer transform -translate-x-1/2 -translate-y-1/2 group"
+                style={{ left: `${x}%`, top: `${y}%` }}
+                onClick={() => onExperienceClick?.(experience)}
+              >
+                {/* Marker */}
+                <div className="relative">
+                  <div className={`
+                    w-6 h-6 rounded-full border-2 border-white shadow-lg flex items-center justify-center text-xs font-bold
+                    ${experience.type === 'free' ? 'bg-green-500' : 'bg-orange-500'}
+                    hover:scale-110 transition-transform duration-200
+                  `}>
+                    {experience.type === 'free' ? 'F' : '$'}
+                  </div>
+                  
+                  {/* Tooltip */}
+                  <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
+                    <div className="bg-black text-white text-xs rounded py-1 px-2 whitespace-nowrap">
+                      {experience.title}
+                    </div>
+                    <div className="w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-black mx-auto"></div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          
+          {/* Map placeholder message */}
+          <div className="absolute bottom-4 left-4 bg-white/90 dark:bg-gray-800/90 rounded-lg p-3 shadow-lg">
+            <div className="text-xs text-gray-600 dark:text-gray-400">
+              <p className="font-medium mb-1">Interactive Map Preview</p>
+              <p>Add your Mapbox token to see the real map</p>
             </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Selected Experience Dialog */}
-      {selectedExperience && (
-        <div className="absolute bottom-4 left-4 right-4 z-10">
-          <Card className="bg-black/90 text-white border-gray-600">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg">{selectedExperience.title}</CardTitle>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSelectedExperience(null)}
-                  className="text-gray-400 hover:text-white"
-                >
-                  ×
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <p className="text-gray-300 text-sm mb-3">
-                {selectedExperience.description?.substring(0, 150)}...
-              </p>
-              
-              <div className="grid grid-cols-2 gap-2 text-xs text-gray-400">
-                {selectedExperience.location && (
-                  <div className="flex items-center">
-                    <MapPin className="w-3 h-3 mr-1" />
-                    {selectedExperience.location}
-                  </div>
-                )}
-                
-                {selectedExperience.startTime && (
-                  <div className="flex items-center">
-                    <Calendar className="w-3 h-3 mr-1" />
-                    {new Date(selectedExperience.startTime).toLocaleDateString()}
-                  </div>
-                )}
-                
-                {selectedExperience.price && (
-                  <div className="flex items-center">
-                    <DollarSign className="w-3 h-3 mr-1" />
-                    ${selectedExperience.price}
-                  </div>
-                )}
-                
-                {selectedExperience.capacity && (
-                  <div className="flex items-center">
-                    <Users className="w-3 h-3 mr-1" />
-                    {selectedExperience.capacity} spots
-                  </div>
-                )}
-              </div>
-              
-              <div className="mt-3 flex space-x-2">
-                <Button size="sm" className="bg-primary text-black hover:bg-primary/90">
-                  View Details
-                </Button>
-                <Button size="sm" variant="outline" className="border-gray-600 text-white">
-                  Book Now
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Legend */}
-      {showHeatMap && (
-        <div className="absolute bottom-4 right-4 z-10">
-          <Card className="bg-black/80 text-white border-gray-700">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Heat Map Legend</CardTitle>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <div className="space-y-1 text-xs">
-                <div className="flex items-center">
-                  <div className="w-4 h-4 bg-blue-500 rounded mr-2"></div>
-                  <span>Low Activity</span>
-                </div>
-                <div className="flex items-center">
-                  <div className="w-4 h-4 bg-green-500 rounded mr-2"></div>
-                  <span>Medium Activity</span>
-                </div>
-                <div className="flex items-center">
-                  <div className="w-4 h-4 bg-yellow-500 rounded mr-2"></div>
-                  <span>High Activity</span>
-                </div>
-                <div className="flex items-center">
-                  <div className="w-4 h-4 bg-red-500 rounded mr-2"></div>
-                  <span>Very High Activity</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          </div>
         </div>
       )}
     </div>

@@ -5,6 +5,7 @@ import { Settings, User, Home, LogOut, MapPin } from "lucide-react";
 import CitySelector from "@/components/CitySelector";
 import { useLocation as useLocationContext } from "@/components/LocationContext";
 import FortuneCookie from "@/components/FortuneCookie";
+import { useAuth } from "@/hooks/useAuth";
 
 interface HeaderNavProps {
   user?: any;
@@ -24,6 +25,7 @@ export default function HeaderNav({
   const [, navigate] = useLocation();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const { currentCity, setCurrentCity } = useLocationContext();
+  const { signOut } = useAuth();
   
   const handleLocationChange = (city: any) => {
     setCurrentCity(city);
@@ -134,7 +136,10 @@ export default function HeaderNav({
               <Button
                 variant="ghost"
                 className="w-full justify-start text-white hover:bg-gray-800 px-4"
-                onClick={() => window.location.href = "/api/logout"}
+                onClick={() => {
+                  signOut();
+                  setShowProfileMenu(false);
+                }}
               >
                 <LogOut className="w-4 h-4 mr-2" />
                 Sign Out

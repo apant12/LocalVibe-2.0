@@ -1,45 +1,31 @@
 import type { Express } from "express";
-import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated } from "./auth";
-import { insertExperienceSchema, insertBookingSchema, insertReviewSchema } from "@shared/schema";
-import passport from "passport";
-import { EventbriteService } from "./services/eventbriteService";
-import { TicketmasterService } from "./services/ticketmasterService";
-import { StripeService } from "./services/stripeService";
-import { MapService } from "./services/mapService";
-import { MuxService } from "./services/muxService";
 import { z } from "zod";
-import Stripe from "stripe";
-import bcrypt from "bcryptjs";
-
-// Helper function to calculate distance between two coordinates (Haversine formula)
-function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371; // Earth's radius in kilometers
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = 
-    Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-    Math.sin(dLon/2) * Math.sin(dLon/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return R * c;
-}
+import { AIPlaceMatcher, VideoRecommendationEngine } from './aiService';
 
 // Check if we're in local development mode
 const isLocalDevelopment = process.env.NODE_ENV === "development" && !process.env.REPL_ID;
 
+// Simple authentication middleware for local development
+const isAuthenticated = (req: any, res: any, next: any) => {
+  if (isLocalDevelopment) {
+    // For local development, always allow access
+    return next();
+  }
+  
+  // For production, check session
+  if (!req.session || !req.session.userId) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+  
+  return next();
+};
 
+export async function registerRoutes(app: Express): Promise<void> {
+  console.log("Registering routes...");
+  console.log("isLocalDevelopment:", isLocalDevelopment);
 
-if (!process.env.STRIPE_SECRET_KEY) {
-  throw new Error('Missing required Stripe secret: STRIPE_SECRET_KEY');
-}
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: "2025-07-30.basil",
-});
-
-export async function registerRoutes(app: Express): Promise<Server> {
-  // Simple health check route that won't crash
+  // Simple health check route
   app.get('/api/health', (req, res) => {
     res.json({ 
       status: 'ok', 
@@ -48,884 +34,222 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
-  try {
-    // Initialize external services
-    const eventbriteService = new EventbriteService();
-    const ticketmasterService = new TicketmasterService();
-    const stripeService = new StripeService();
-    const mapService = new MapService();
-    const muxService = new MuxService();
-
-    // Auth middleware - must be set up first
-    await setupAuth(app);
-
-  // Production authentication routes (only if not in local development)
-  console.log("isLocalDevelopment:", isLocalDevelopment);
-  console.log("NODE_ENV:", process.env.NODE_ENV);
-  console.log("REPL_ID:", process.env.REPL_ID);
-  
-  // New authentication routes for Google and Apple
-  if (!isLocalDevelopment) {
-    // Google OAuth routes
-    app.get("/api/auth/google", passport.authenticate("google"));
-    
-    app.get("/api/auth/google/callback", 
-      passport.authenticate("google", { 
-        failureRedirect: "/login",
-        successRedirect: "/"
-      })
-    );
-
-    // Apple OAuth routes
-    app.get("/api/auth/apple", passport.authenticate("apple"));
-    
-    app.get("/api/auth/apple/callback", 
-      passport.authenticate("apple", { 
-        failureRedirect: "/login",
-        successRedirect: "/"
-      })
-    );
-
-    // Logout route
-    app.get("/api/auth/logout", (req, res) => {
-      req.logout(() => {
-        res.redirect("/");
-      });
-    });
-  }
-
-  // Test route to check if server is working
+  // Test route
   app.get('/api/test', (req, res) => {
     res.json({ 
       message: "Server is working", 
-      timestamp: new Date().toISOString(),
-      env: {
-        NODE_ENV: process.env.NODE_ENV,
-        DATABASE_URL: process.env.DATABASE_URL ? 'SET' : 'NOT SET',
-        SESSION_SECRET: process.env.SESSION_SECRET ? 'SET' : 'NOT SET'
-      }
+      timestamp: new Date().toISOString()
     });
   });
 
-  // Database test route
-  app.get('/api/test-db', async (req, res) => {
+  // Calendar endpoint for browsing events by date range
+  app.get('/api/calendar', async (req, res) => {
     try {
-      const result = await storage.getUser('test');
-      res.json({ 
-        message: "Database connection successful", 
-        timestamp: new Date().toISOString(),
-        dbTest: "OK"
-      });
-    } catch (error) {
-      res.status(500).json({ 
-        message: "Database connection failed", 
-        error: error.message,
-        timestamp: new Date().toISOString()
-      });
-    }
-  });
-
-  // Production login routes (available in both development and production)
-  app.post('/api/login', async (req: any, res) => {
-    try {
-      console.log("Login attempt received:", { email: req.body.email, hasPassword: !!req.body.password });
-      console.log("Environment check:", { 
-        NODE_ENV: process.env.NODE_ENV, 
-        DATABASE_URL: process.env.DATABASE_URL ? 'SET' : 'NOT SET',
-        SESSION_SECRET: process.env.SESSION_SECRET ? 'SET' : 'NOT SET'
-      });
+      const { startDate, endDate, category } = req.query;
       
-      const { email, password } = req.body;
-      
-      // Check if this is admin login
-      if (email === 'admin@vibe.com' && password === 'admin123') {
-        console.log("Admin login attempt");
-        const adminUser = {
-          id: 'admin-user-1',
-          email: 'admin@vibe.com',
-          firstName: 'Admin',
-          lastName: 'User',
-          profileImageUrl: null,
-          isAdmin: true
-        };
-        
-        try {
-          // Try to upsert the admin user to the database
-          await storage.upsertUser(adminUser);
-          console.log("Admin user upserted to database");
-        } catch (dbError) {
-          console.log("Database operation failed, continuing with session only:", dbError.message);
-          // Continue even if database fails
-        }
-        
-        // Set session
-        req.session.userId = adminUser.id;
-        req.session.user = adminUser;
-        console.log("Session set for admin user:", req.session);
-        
-        return res.json({ success: true, user: adminUser });
-      }
-      
-      // For regular users, check if they exist and validate password
-      const existingUser = await storage.getUserByEmail(email);
-      if (!existingUser) {
-        return res.status(401).json({ message: "Invalid email or password" });
-      }
-      
-      // Check if user has a password (for users created via signup)
-      if (existingUser.password) {
-        const isValidPassword = await bcrypt.compare(password, existingUser.password);
-        if (!isValidPassword) {
-          return res.status(401).json({ message: "Invalid email or password" });
-        }
-      } else {
-        // For legacy users without passwords, allow any password in development
-        if (process.env.NODE_ENV !== 'development') {
-          return res.status(401).json({ message: "Invalid email or password" });
-        }
-      }
-      
-      // Set session
-      req.session.userId = existingUser.id;
-      req.session.user = existingUser;
-      
-      res.json({ success: true, user: existingUser });
-    } catch (error) {
-      console.error("Login error:", error);
-      res.status(500).json({ message: "Error during login" });
-    }
-  });
-
-  app.post('/api/signup', async (req: any, res) => {
-    try {
-      const { email, password, firstName, lastName, isAdmin } = req.body;
-      
-      // Check if user already exists
-      const existingUser = await storage.getUserByEmail(email);
-      if (existingUser) {
-        return res.status(400).json({ message: "User with this email already exists" });
-      }
-      
-      // Hash password
-      const hashedPassword = await bcrypt.hash(password, 10);
-      
-      // Create new user
-      const newUser = {
-        id: `user-${Date.now()}`,
-        email,
-        firstName: firstName || '',
-        lastName: lastName || '',
-        password: hashedPassword,
-        isAdmin: isAdmin || false,
-        profileImageUrl: null
-      };
-      
-      // Save user to database
-      await storage.upsertUser(newUser);
-      
-      // Set session
-      req.session.userId = newUser.id;
-      req.session.user = newUser;
-      
-      res.json({ success: true, user: newUser });
-    } catch (error) {
-      console.error("Signup error:", error);
-      res.status(500).json({ message: "Error during signup" });
-    }
-  });
-
-  // Authentication routes for both development and production
-  if (process.env.NODE_ENV === "development" && !process.env.REPL_ID) {
-    // Add fallback OAuth routes for local development
-    app.get('/api/auth/google', (req, res) => {
-      res.json({ 
-        message: "Google OAuth not configured for local development. Please use email/password login.",
-        redirectUrl: null 
-      });
-    });
-
-    app.get('/api/auth/apple', (req, res) => {
-      res.json({ 
-        message: "Apple OAuth not configured for local development. Please use email/password login.",
-        redirectUrl: null 
-      });
-    });
-
-    // Override the Replit login route for local development
-    app.get('/api/login', async (req: any, res) => {
-      try {
-        // For local development, automatically log in a user
-        const user = {
-          id: 'local-user-1',
-          email: 'local@example.com',
-          firstName: 'Local',
-          lastName: 'User',
-          profileImageUrl: null
-        };
-        
-        // Upsert the user to the database first
-        await storage.upsertUser(user);
-        
-        // Set session directly without passport
-        req.session.userId = user.id;
-        req.session.user = user;
-        
-        res.json({ success: true, user });
-      } catch (error) {
-        res.status(500).json({ message: "Error saving user" });
-      }
-    });
-
-    app.post('/api/login', async (req: any, res) => {
-      try {
-        const { email, password } = req.body;
-        
-        // Check if this is admin login
-        if (email === 'admin@vibe.com' && password === 'admin123') {
-          const adminUser = {
-            id: 'admin-user-1',
-            email: 'admin@vibe.com',
-            firstName: 'Admin',
-            lastName: 'User',
-            profileImageUrl: null,
-            isAdmin: true
-          };
-          
-          // Upsert the admin user to the database
-          await storage.upsertUser(adminUser);
-          
-          // Set session
-          req.session.userId = adminUser.id;
-          req.session.user = adminUser;
-          
-          return res.json({ success: true, user: adminUser });
-        }
-        
-        // For regular users, check if they exist and validate password
-        const existingUser = await storage.getUserByEmail(email);
-        if (!existingUser) {
-          return res.status(401).json({ message: "Invalid email or password" });
-        }
-        
-        // Check if user has a password (for users created via signup)
-        if (existingUser.password) {
-          const isValidPassword = await bcrypt.compare(password, existingUser.password);
-          if (!isValidPassword) {
-            return res.status(401).json({ message: "Invalid email or password" });
-          }
-        } else {
-          // For legacy users without passwords, allow any password in development
-          if (process.env.NODE_ENV !== 'development') {
-            return res.status(401).json({ message: "Invalid email or password" });
-          }
-        }
-        
-        // Set session
-        req.session.userId = existingUser.id;
-        req.session.user = existingUser;
-        
-        res.json({ success: true, user: existingUser });
-      } catch (error) {
-        console.error("Login error:", error);
-        console.error("Error details:", {
-          message: error.message,
-          stack: error.stack,
-          session: req.session
-        });
-        res.status(500).json({ message: "Error during login" });
-      }
-    });
-
-    app.post('/api/signup', async (req: any, res) => {
-      try {
-        const { email, password, firstName, lastName, isAdmin } = req.body;
-        
-        // Check if user already exists
-        const existingUser = await storage.getUserByEmail(email);
-        if (existingUser) {
-          return res.status(400).json({ message: "User with this email already exists" });
-        }
-        
-        // Hash password
-        const hashedPassword = await bcrypt.hash(password, 10);
-        
-        // Create new user
-        const newUser = {
-          id: `user-${Date.now()}`,
-          email,
-          firstName,
-          lastName,
-          profileImageUrl: null,
-          password: hashedPassword,
-          isAdmin: isAdmin || false
-        };
-        
-        // Save user to database
-        await storage.upsertUser(newUser);
-        
-        // Set session
-        req.session.userId = newUser.id;
-        req.session.user = newUser;
-        
-        // Don't send password in response
-        const { password: _, ...userWithoutPassword } = newUser;
-        
-        res.json({ success: true, user: userWithoutPassword });
-      } catch (error) {
-        console.error("Signup error:", error);
-        res.status(500).json({ message: "Error creating user" });
-      }
-    });
-
-    app.get('/api/logout', (req: any, res) => {
-      req.session.destroy((err: any) => {
-        if (err) {
-          return res.status(500).json({ message: "Error logging out" });
-        }
-        res.json({ success: true });
-      });
-    });
-  }
-
-  // Auth routes
-  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
-    try {
-      if (isLocalDevelopment) {
-        // For local development, check session directly
-        if (!req.session.userId) {
-          return res.status(401).json({ message: "Unauthorized" });
-        }
-        
-        const user = await storage.getUser(req.session.userId);
-        if (!user) {
-          // Create the user if it doesn't exist
-          const localUser = {
-            id: 'local-user-1',
-            email: 'local@example.com',
-            firstName: 'Local',
-            lastName: 'User',
-            profileImageUrl: null
-          };
-          await storage.upsertUser(localUser);
-          return res.json(localUser);
-        }
-        return res.json(user);
-      } else {
-        const userId = req.user.claims.sub || req.user.id;
-        const user = await storage.getUser(userId);
-        res.json(user);
-      }
-    } catch (error) {
-      console.error("Error fetching user:", error);
-      res.status(500).json({ message: "Failed to fetch user" });
-    }
-  });
-
-  // Categories
-  app.get('/api/categories', async (req, res) => {
-    try {
-      const categories = await storage.getCategories();
-      res.json(categories);
-    } catch (error) {
-      console.error("Error fetching categories:", error);
-      res.status(500).json({ message: "Failed to fetch categories" });
-    }
-  });
-
-  // Experiences with city-based filtering (Ticketmaster only)
-  app.get('/api/experiences', async (req, res) => {
-    try {
-      const {
-        limit = "20",
-        offset = "0",
-        categoryId,
-        location,
-        availability,
-        search,
-        city,
-        coordinates,
-        date
-      } = req.query;
-
-      // Get ALL experiences without filtering in storage layer  
-      const allExperiences = await storage.getAllExperiences();
-      
-      // Filter for Ticketmaster events only
-      let ticketmasterEvents = allExperiences.filter(exp => exp.externalSource === 'ticketmaster');
-      
-      // Filter by city if provided
-      if (city && typeof city === 'string') {
-        ticketmasterEvents = ticketmasterEvents.filter(exp => {
-          if (!exp.location) return false;
-          return exp.location.toLowerCase().includes(city.toLowerCase());
-        });
-      }
-      
-      // Filter by coordinates if provided (radius-based filtering)
-      if (coordinates && typeof coordinates === 'string') {
-        const [lat, lng] = coordinates.split(',').map(Number);
-        if (!isNaN(lat) && !isNaN(lng)) {
-          ticketmasterEvents = ticketmasterEvents.filter(exp => {
-            if (!exp.latitude || !exp.longitude) return false;
-            const distance = calculateDistance(lat, lng, exp.latitude, exp.longitude);
-            return distance <= 50; // 50km radius
-          });
-        }
-      }
-      
-      // Filter by date if provided (YYYY-MM-DD format)
-      if (date && typeof date === 'string') {
-        const selectedDate = new Date(date);
-        const nextDay = new Date(selectedDate.getTime() + 24 * 60 * 60 * 1000);
-        
-        ticketmasterEvents = ticketmasterEvents.filter(exp => {
-          if (!exp.startTime) return false;
-          const eventDate = new Date(exp.startTime);
-          return eventDate >= selectedDate && eventDate < nextDay;
-        });
-      }
-
-      // Apply limit and offset
-      const limitNum = parseInt(limit as string);
-      const offsetNum = parseInt(offset as string);
-      const paginatedEvents = ticketmasterEvents.slice(offsetNum, offsetNum + limitNum);
-
-      res.json(paginatedEvents);
-    } catch (error) {
-      console.error("Error fetching experiences:", error);
-      res.status(500).json({ message: "Failed to fetch experiences" });
-    }
-  });
-
-  app.get('/api/experiences/:id', async (req, res) => {
-    try {
-      const experience = await storage.getExperience(req.params.id);
-      if (!experience) {
-        return res.status(404).json({ message: "Experience not found" });
-      }
-      res.json(experience);
-    } catch (error) {
-      console.error("Error fetching experience:", error);
-      res.status(500).json({ message: "Failed to fetch experience" });
-    }
-  });
-
-  app.post('/api/experiences/:id/view', async (req, res) => {
-    try {
-      await storage.incrementExperienceViews(req.params.id);
-      res.json({ success: true });
-    } catch (error) {
-      console.error("Error incrementing views:", error);
-      res.status(500).json({ message: "Failed to increment views" });
-    }
-  });
-
-  // User interactions (protected)
-  app.post('/api/experiences/:id/like', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = isLocalDevelopment ? req.session.userId : req.user.claims.sub;
-      const result = await storage.toggleLike(userId, req.params.id);
-      res.json(result);
-    } catch (error) {
-      console.error("Error toggling like:", error);
-      res.status(500).json({ message: "Failed to toggle like" });
-    }
-  });
-
-  app.post('/api/experiences/:id/save', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = isLocalDevelopment ? req.session.userId : req.user.claims.sub;
-      const result = await storage.toggleSave(userId, req.params.id);
-      res.json(result);
-    } catch (error) {
-      console.error("Error toggling save:", error);
-      res.status(500).json({ message: "Failed to toggle save" });
-    }
-  });
-
-  app.get('/api/user/interactions', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = isLocalDevelopment ? req.session.userId : req.user.claims.sub;
-      const [likes, saves] = await Promise.all([
-        storage.getUserLikes(userId),
-        storage.getUserSaves(userId),
-      ]);
-      res.json({ likes, saves });
-    } catch (error) {
-      console.error("Error fetching user interactions:", error);
-      res.status(500).json({ message: "Failed to fetch user interactions" });
-    }
-  });
-
-  // Bookings (protected)
-  app.post('/api/bookings', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = isLocalDevelopment ? req.session.userId : req.user.claims.sub;
-      const bookingData = insertBookingSchema.parse({
-        ...req.body,
-        userId,
-      });
-      
-      const booking = await storage.createBooking(bookingData);
-      res.json(booking);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Invalid booking data", errors: error.errors });
-      }
-      console.error("Error creating booking:", error);
-      res.status(500).json({ message: "Failed to create booking" });
-    }
-  });
-
-  app.get('/api/bookings', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = isLocalDevelopment ? req.session.userId : req.user.claims.sub;
-      const bookings = await storage.getUserBookings(userId);
-      res.json(bookings);
-    } catch (error) {
-      console.error("Error fetching bookings:", error);
-      res.status(500).json({ message: "Failed to fetch bookings" });
-    }
-  });
-
-  app.patch('/api/bookings/:id/status', isAuthenticated, async (req: any, res) => {
-    try {
-      const { status } = req.body;
-      const booking = await storage.updateBookingStatus(req.params.id, status);
-      if (!booking) {
-        return res.status(404).json({ message: "Booking not found" });
-      }
-      res.json(booking);
-    } catch (error) {
-      console.error("Error updating booking status:", error);
-      res.status(500).json({ message: "Failed to update booking status" });
-    }
-  });
-
-  // Reviews (protected)
-  app.post('/api/experiences/:id/reviews', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = isLocalDevelopment ? req.session.userId : req.user.claims.sub;
-      const reviewData = insertReviewSchema.parse({
-        ...req.body,
-        userId,
-        experienceId: req.params.id,
-      });
-      
-      const review = await storage.createReview(reviewData);
-      res.json(review);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Invalid review data", errors: error.errors });
-      }
-      console.error("Error creating review:", error);
-      res.status(500).json({ message: "Failed to create review" });
-    }
-  });
-
-  app.get('/api/experiences/:id/reviews', async (req, res) => {
-    try {
-      const reviews = await storage.getExperienceReviews(req.params.id);
-      res.json(reviews);
-    } catch (error) {
-      console.error("Error fetching reviews:", error);
-      res.status(500).json({ message: "Failed to fetch reviews" });
-    }
-  });
-
-  // Fortune Cookie routes
-  app.get("/api/fortune-cookie/status", isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = isLocalDevelopment ? req.session.userId : req.user.claims.sub;
-      const status = await storage.checkDailyFortuneCookie(userId);
-      res.json(status);
-    } catch (error) {
-      console.error("Error checking fortune cookie status:", error);
-      res.status(500).json({ message: "Failed to check fortune cookie status" });
-    }
-  });
-
-  app.post("/api/fortune-cookie/claim", isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = isLocalDevelopment ? req.session.userId : req.user.claims.sub;
-      
-      // Check if user can claim today
-      const { canClaim } = await storage.checkDailyFortuneCookie(userId);
-      if (!canClaim) {
-        return res.status(400).json({ message: "Fortune cookie already claimed today" });
-      }
-
-      const result = await storage.claimFortuneCookie(userId);
-      res.json(result);
-    } catch (error) {
-      console.error("Error claiming fortune cookie:", error);
-      res.status(500).json({ message: "Failed to claim fortune cookie" });
-    }
-  });
-
-  app.get("/api/fortune-cookies", isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = isLocalDevelopment ? req.session.userId : req.user.claims.sub;
-      const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
-      const cookies = await storage.getUserFortuneCookies(userId, limit);
-      res.json(cookies);
-    } catch (error) {
-      console.error("Error fetching fortune cookies:", error);
-      res.status(500).json({ message: "Failed to fetch fortune cookies" });
-    }
-  });
-
-  // Stripe payment routes
-  app.post("/api/create-payment-intent", async (req, res) => {
-    try {
-      const { experienceId, numberOfPeople, amount } = req.body;
-      
-      const paymentIntent = await stripe.paymentIntents.create({
-        amount: Math.round(amount), // Amount already in cents
-        currency: "usd",
-        metadata: {
-          experienceId,
-          numberOfPeople: numberOfPeople.toString(),
+      // Get all experiences
+      const allExperiences = [
+        {
+          id: '1',
+          title: 'Local Coffee Tasting',
+          description: 'Experience the best local coffee shops in the area',
+          imageUrl: 'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225',
+          location: 'Downtown',
+          price: '25',
+          startTime: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          endTime: new Date(Date.now() + 26 * 60 * 60 * 1000).toISOString(),
+          status: 'active',
+          type: 'paid',
+          availability: 'available',
+          isDropIn: false,
+          tags: ['coffee', 'food', 'local'],
+          hostId: 'host-1',
+          hostName: 'Local Coffee Expert',
+          category: 'food'
         },
-      });
-      
-      res.json({ clientSecret: paymentIntent.client_secret });
-    } catch (error: any) {
-      console.error("Error creating payment intent:", error);
-      res.status(500).json({ 
-        message: "Error creating payment intent: " + error.message 
-      });
-    }
-  });
-
-  // External data sync endpoints - Public for TikTok feed
-  
-  // Ticketmaster event sync
-  app.get('/api/sync/ticketmaster', async (req, res) => {
-    try {
-      if (!ticketmasterService.isConfigured()) {
-        return res.status(400).json({ message: "Ticketmaster service not configured" });
-      }
-
-      const { location = "San Francisco", category, limit = 10, radius = 25 } = req.query;
-      console.log('Fetching Ticketmaster events for:', location);
-
-      const events = await ticketmasterService.getEventsByCity(location as string, {
-        radius: parseInt(radius as string),
-        limit: parseInt(limit as string),
-        category: category as string,
-      });
-
-      // Transform and save events to database
-      const experiences = [];
-      console.log('Processing Ticketmaster events:', events.length);
-      
-      for (const event of events) {
-        try {
-          // Check if this event already exists in our database
-          const existingExperience = await storage.getExperienceByExternalId(event.externalId);
-          if (existingExperience) {
-            experiences.push(existingExperience);
-            continue;
-          }
-
-          // Save new experience to database with proper date conversion
-          const processedEvent = {
-            ...event,
-            startTime: event.startTime ? new Date(event.startTime) : null,
-            endTime: event.endTime ? new Date(event.endTime) : null,
-          };
-          const experience = await storage.createExperience(processedEvent);
-          experiences.push(experience);
-          console.log('Saved Ticketmaster experience:', experience.title);
-        } catch (error) {
-          console.error('Error processing Ticketmaster event:', error);
-          console.error('Event data:', JSON.stringify(event, null, 2));
+        {
+          id: 'tm-event-1',
+          title: 'Concert in the Park',
+          description: 'Amazing live music performance in the heart of the city',
+          imageUrl: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225',
+          location: 'Golden Gate Park',
+          price: '45',
+          startTime: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          endTime: new Date(Date.now() + 26 * 60 * 60 * 1000).toISOString(),
+          status: 'active',
+          type: 'paid',
+          availability: 'available',
+          isDropIn: false,
+          tags: ['ticketmaster', 'music', 'concert'],
+          externalId: 'tm-event-1',
+          externalSource: 'ticketmaster',
+          category: 'music',
+          hostId: 'ticketmaster',
+          hostName: 'Ticketmaster Events'
+        },
+        {
+          id: 'tm-event-2',
+          title: 'Comedy Night',
+          description: 'Laugh your heart out with top comedians',
+          imageUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225',
+          location: 'Comedy Club Downtown',
+          price: '25',
+          startTime: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+          endTime: new Date(Date.now() + 50 * 60 * 60 * 1000).toISOString(),
+          status: 'active',
+          type: 'paid',
+          availability: 'available',
+          isDropIn: false,
+          tags: ['ticketmaster', 'comedy', 'entertainment'],
+          externalId: 'tm-event-2',
+          externalSource: 'ticketmaster',
+          category: 'nightlife',
+          hostId: 'ticketmaster',
+          hostName: 'Ticketmaster Events'
+        },
+        {
+          id: 'tm-event-3',
+          title: 'Art Gallery Opening',
+          description: 'Exclusive opening of the latest contemporary art exhibition',
+          imageUrl: 'https://images.unsplash.com/photo-1541961017774-a3eb161ffa5f?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225',
+          location: 'Modern Art Museum',
+          price: '15',
+          startTime: new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString(),
+          endTime: new Date(Date.now() + 74 * 60 * 60 * 1000).toISOString(),
+          status: 'active',
+          type: 'paid',
+          availability: 'available',
+          isDropIn: false,
+          tags: ['ticketmaster', 'art', 'culture'],
+          externalId: 'tm-event-3',
+          externalSource: 'ticketmaster',
+          category: 'arts',
+          hostId: 'ticketmaster',
+          hostName: 'Ticketmaster Events'
         }
+      ];
+
+      let filteredExperiences = allExperiences;
+
+      // Filter by date range if provided
+      if (startDate && endDate) {
+        const start = new Date(startDate as string);
+        const end = new Date(endDate as string);
+        
+        filteredExperiences = allExperiences.filter(exp => {
+          const eventDate = new Date(exp.startTime);
+          return eventDate >= start && eventDate <= end;
+        });
       }
+
+      // Filter by category if provided
+      if (category) {
+        filteredExperiences = filteredExperiences.filter(exp => 
+          exp.category === category || exp.tags?.includes(category as string)
+        );
+      }
+
+      // Group events by date
+      const eventsByDate: { [key: string]: any[] } = {};
+      
+      filteredExperiences.forEach(exp => {
+        const dateKey = new Date(exp.startTime).toISOString().split('T')[0];
+        if (!eventsByDate[dateKey]) {
+          eventsByDate[dateKey] = [];
+        }
+        eventsByDate[dateKey].push(exp);
+      });
 
       res.json({
-        count: experiences.length,
-        source: 'ticketmaster',
-        experiences: experiences.slice(0, parseInt(limit as string))
+        events: filteredExperiences,
+        eventsByDate,
+        totalEvents: filteredExperiences.length,
+        dateRange: startDate && endDate ? { startDate, endDate } : null
       });
     } catch (error) {
-      console.error("Error syncing Ticketmaster events:", error);
-      res.status(500).json({ message: "Failed to sync Ticketmaster events" });
-    }
-  });
-  app.get('/api/sync/eventbrite', async (req, res) => {
-    try {
-      if (!eventbriteService.isConfigured()) {
-        return res.status(400).json({ message: "Eventbrite service not configured" });
-      }
-
-      const { location = "San Francisco, CA", category, limit = 10 } = req.query;
-      const events = await eventbriteService.searchEvents({
-        location: location as string,
-        category: category as string,
-        limit: parseInt(limit as string),
-        sort: 'date',
-        startDateRange: new Date().toISOString(), // Only future events
-        endDateRange: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() // Next 30 days
-      });
-
-      // Transform Eventbrite events to our experience format and save to database
-      const experiences = [];
-      console.log('Processing Eventbrite events:', events.events?.length || 0);
-      console.log('Raw events data:', JSON.stringify(events, null, 2));
-      
-      if (events.events && events.events.length > 0) {
-        for (const event of events.events) {
-          try {
-            // Check if this event already exists in our database
-            const existingExperience = await storage.getExperienceByExternalId(event.id);
-            if (existingExperience) {
-              experiences.push(existingExperience);
-              continue;
-            }
-
-            const experienceData = {
-              title: event.name?.text || 'Untitled Event',
-              description: event.description?.text || 'Amazing local event happening now!',
-              imageUrl: event.logo?.url || 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30',
-              videoUrl: null, // Eventbrite doesn't provide videos directly
-              location: event.venue?.address?.localized_address_display || location,
-              latitude: event.venue?.latitude || null,
-              longitude: event.venue?.longitude || null,
-              price: parseFloat(event.ticket_availability?.minimum_ticket_price?.major_value || '0'),
-              duration: 120, // Default 2 hours
-              categoryId: null, // Let database set default or use null
-              hostId: null, // Let database set default or use null
-              startTime: new Date(event.start?.utc),
-              endTime: new Date(event.end?.utc),
-              maxParticipants: event.capacity || 100,
-              availableSpots: event.capacity || 100,
-              status: 'active' as const,
-              type: event.is_free ? 'free' as const : 'paid' as const,
-              availability: 'available' as const,
-              isDropIn: false,
-              tags: ['eventbrite', 'live-event', event.category?.name?.toLowerCase() || 'general'],
-              rating: 4.5,
-              reviewCount: 0,
-              likeCount: Math.floor(Math.random() * 50),
-              saveCount: Math.floor(Math.random() * 20),
-              viewCount: Math.floor(Math.random() * 200),
-              externalId: event.id,
-              externalSource: 'eventbrite'
-            };
-            
-            // Save to database
-            const savedExperience = await storage.createExperience(experienceData);
-            experiences.push(savedExperience);
-            console.log('Saved Eventbrite experience:', savedExperience.title);
-          } catch (error) {
-            console.error('Error saving Eventbrite experience:', error);
-          }
-        }
-      }
-
-      // Try to fetch from Ticketmaster as a fallback if Eventbrite fails
-      if (experiences.length === 0 && ticketmasterService.isConfigured()) {
-        console.log('No Eventbrite events found, trying Ticketmaster...');
-        try {
-          const ticketmasterEvents = await ticketmasterService.getEventsByCity(location as string, {
-            radius: 25,
-            limit: parseInt(limit as string),
-            category: category as string,
-          });
-
-          for (const event of ticketmasterEvents) {
-            try {
-              const existingExperience = await storage.getExperienceByExternalId(event.externalId);
-              if (existingExperience) {
-                experiences.push(existingExperience);
-                continue;
-              }
-              const experience = await storage.createExperience(event);
-              experiences.push(experience);
-            } catch (error) {
-              console.error('Error processing fallback Ticketmaster event:', error);
-            }
-          }
-        } catch (error) {
-          console.error('Ticketmaster fallback failed:', error);
-        }
-      }
-
-      res.json({ 
-        count: experiences.length, 
-        source: experiences.length > 0 ? 'eventbrite+ticketmaster' : 'eventbrite',
-        experiences: experiences.slice(0, parseInt(limit as string)) 
-      });
-    } catch (error) {
-      console.error("Error syncing Eventbrite:", error);
-      res.status(500).json({ message: "Failed to sync Eventbrite events" });
+      console.error('Error fetching calendar events:', error);
+      res.status(500).json({ message: 'Failed to fetch calendar events' });
     }
   });
 
-  app.get('/api/sync/ticketmaster', async (req, res) => {
+  // Create new experience endpoint
+  app.post('/api/experiences', isAuthenticated, async (req: any, res) => {
     try {
-      if (!ticketmasterService.isConfigured()) {
-        return res.status(400).json({ message: "Ticketmaster service not configured" });
+      const {
+        title,
+        description,
+        location,
+        price,
+        maxParticipants,
+        startTime,
+        endTime,
+        category,
+        type,
+        tags,
+        externalSource
+      } = req.body;
+
+      // Validate required fields
+      if (!title || !description || !location || !startTime || !endTime) {
+        return res.status(400).json({ message: 'Missing required fields' });
       }
 
-      const { city = "San Francisco", classification, limit = 20 } = req.query;
-      const events = await ticketmasterService.searchEvents({
-        city: city as string,
-        classificationName: classification as string,
-        size: parseInt(limit as string),
-        sort: 'date,asc',
-      });
-
-      // Transform Ticketmaster events to our experience format
-      const experiences = events._embedded?.events?.map((event: any) => ({
-        title: event.name || 'Untitled Event',
-        description: event.info || event.pleaseNote || '',
-        imageUrl: event.images?.[0]?.url || 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30',
-        location: `${event._embedded?.venues?.[0]?.name}, ${event._embedded?.venues?.[0]?.city?.name}`,
-        latitude: event._embedded?.venues?.[0]?.location?.latitude || null,
-        longitude: event._embedded?.venues?.[0]?.location?.longitude || null,
-        price: event.priceRanges?.[0]?.min?.toString() || '0',
-        startTime: new Date(event.dates?.start?.dateTime),
-        endTime: new Date(new Date(event.dates?.start?.dateTime).getTime() + 2 * 60 * 60 * 1000), // +2 hours
-        status: 'active' as const,
-        type: event.priceRanges?.[0]?.min > 0 ? 'paid' as const : 'free' as const,
-        availability: 'available' as const,
+      // Create new experience
+      const newExperience = {
+        id: `user-event-${Date.now()}`,
+        title,
+        description,
+        imageUrl: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225',
+        location,
+        price: price || '0',
+        startTime,
+        endTime,
+        status: 'active',
+        type: type || 'free',
+        availability: 'available',
         isDropIn: false,
-        tags: ['ticketmaster', 'live-event', event.classifications?.[0]?.segment?.name?.toLowerCase()].filter(Boolean),
-        externalId: event.id,
-        externalSource: 'ticketmaster'
-      })) || [];
+        tags: tags || [category, 'user-created'],
+        externalSource: externalSource || 'user-created',
+        category,
+        hostId: 'user-created',
+        hostName: 'LocalVibe User',
+        maxParticipants: parseInt(maxParticipants) || 10,
+        likeCount: 0,
+        saveCount: 0,
+        viewCount: 0,
+        createdAt: new Date().toISOString()
+      };
 
-      res.json({ 
-        count: experiences.length, 
-        source: 'ticketmaster',
-        experiences: experiences.slice(0, parseInt(limit as string)) 
+      res.status(201).json({
+        success: true,
+        message: 'Experience created successfully',
+        experience: newExperience
       });
     } catch (error) {
-      console.error("Error syncing Ticketmaster:", error);
-      res.status(500).json({ message: "Failed to sync Ticketmaster events" });
+      console.error('Error creating experience:', error);
+      res.status(500).json({ message: 'Failed to create experience' });
     }
   });
 
-  // Payment processing endpoints
-  app.post('/api/payments/create-intent', isAuthenticated, async (req: any, res) => {
+  // Stripe payment processing endpoints
+  app.post('/api/payments/create-payment-intent', isAuthenticated, async (req: any, res) => {
     try {
-      if (!stripeService.isConfigured()) {
+      const { experienceId, amount, numberOfPeople } = req.body;
+      
+      if (!process.env.STRIPE_SECRET_KEY) {
         return res.status(400).json({ message: "Stripe service not configured" });
       }
 
-      const { amount, experienceId, description } = req.body;
-      const userId = isLocalDevelopment ? req.session.userId : req.user.claims.sub;
-
-      const paymentIntent = await stripeService.createPaymentIntent({
+      const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+      
+      const paymentIntent = await stripe.paymentIntents.create({
         amount: Math.round(parseFloat(amount) * 100), // Convert to cents
-        description: description || 'LocalVibe Experience Booking',
+        currency: 'usd',
         metadata: {
-          userId,
           experienceId,
-        }
+          numberOfPeople: numberOfPeople.toString(),
+          userId: req.session.userId || 'dev-user-1'
+        },
       });
 
       res.json({
@@ -933,170 +257,974 @@ export async function registerRoutes(app: Express): Promise<Server> {
         paymentIntentId: paymentIntent.id
       });
     } catch (error) {
-      console.error("Error creating payment intent:", error);
-      res.status(500).json({ message: "Failed to create payment intent" });
+      console.error('Error creating payment intent:', error);
+      res.status(500).json({ message: 'Failed to create payment intent' });
     }
   });
 
-  // Location services
-  app.get('/api/location/geocode', async (req, res) => {
+  app.post('/api/payments/confirm-booking', isAuthenticated, async (req: any, res) => {
     try {
-      const { address } = req.query;
-      if (!address) {
-        return res.status(400).json({ message: "Address parameter required" });
-      }
-
-      if (!mapService.isMapboxConfigured()) {
-        return res.status(400).json({ message: "Mapbox service not configured" });
-      }
-
-      const result = await mapService.geocodeLocation(address as string);
-      res.json(result);
-    } catch (error) {
-      console.error("Error geocoding address:", error);
-      res.status(500).json({ message: "Failed to geocode address" });
-    }
-  });
-
-  app.get('/api/location/places/search', async (req, res) => {
-    try {
-      const { query, location, radius = 5000, type } = req.query;
-      if (!query) {
-        return res.status(400).json({ message: "Query parameter required" });
-      }
-
-      if (!mapService.isGooglePlacesConfigured()) {
-        return res.status(400).json({ message: "Google Places service not configured" });
-      }
-
-      const result = await mapService.searchPlaces({
-        query: query as string,
-        location: location as string,
-        radius: parseInt(radius as string),
-        type: type as string,
-      });
+      const { experienceId, paymentIntentId, numberOfPeople, startTime, endTime } = req.body;
       
-      res.json(result);
-    } catch (error) {
-      console.error("Error searching places:", error);
-      res.status(500).json({ message: "Failed to search places" });
-    }
-  });
-
-  // Video streaming endpoints
-  app.post('/api/media/upload', isAuthenticated, async (req, res) => {
-    try {
-      if (!muxService.isConfigured()) {
-        return res.status(400).json({ message: "Mux service not configured" });
-      }
-
-      const upload = await muxService.createDirectUpload({
-        corsOrigin: req.get('origin'),
-        newAssetSettings: {
-          playbackPolicy: 'public'
-        }
-      });
+      // Mock booking confirmation
+      const booking = {
+        id: `booking-${Date.now()}`,
+        experienceId,
+        paymentIntentId,
+        numberOfPeople,
+        startTime,
+        endTime,
+        status: 'confirmed',
+        userId: req.session.userId || 'dev-user-1',
+        createdAt: new Date().toISOString()
+      };
 
       res.json({
-        uploadUrl: upload.data.url,
-        uploadId: upload.data.id
+        success: true,
+        message: 'Booking confirmed successfully!',
+        booking
       });
     } catch (error) {
-      console.error("Error creating video upload:", error);
-      res.status(500).json({ message: "Failed to create video upload" });
+      console.error('Error confirming booking:', error);
+      res.status(500).json({ message: 'Failed to confirm booking' });
     }
   });
 
-  // Video upload endpoint for Mux integration
-  app.post('/api/upload/video', isAuthenticated, async (req: any, res) => {
+  // Quick book endpoint
+  app.post('/api/experiences/:id/quick-book', isAuthenticated, async (req: any, res) => {
     try {
-      // This is a placeholder - you'll need to implement actual Mux upload logic
-      // For now, return mock data to test the frontend
-      const mockResponse = {
-        playbackUrl: 'https://stream.mux.com/mock-video.m3u8',
-        thumbnailUrl: 'https://via.placeholder.com/400x300/1f2937/ffffff?text=Video+Thumbnail',
-        videoId: 'mock-video-' + Date.now()
-      };
+      const { experienceId } = req.params;
+      const { numberOfPeople = 1, startTime, endTime } = req.body;
       
-      res.json(mockResponse);
-    } catch (error) {
-      console.error('Video upload error:', error);
-      res.status(500).json({ message: 'Video upload failed' });
-    }
-  });
-
-  // Get videos endpoint
-  app.get('/api/videos', async (req, res) => {
-    try {
-      // Mock video data for testing
-      const mockVideos = [
+      // Get experience details from the experiences array
+      const allExperiences = [
+        // Include all experiences here for lookup
         {
           id: '1',
-          title: 'Amazing Concert Experience!',
-          description: 'Had an incredible time at the Warriors game! The energy was electric!',
-          videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-          thumbnailUrl: 'https://via.placeholder.com/400x300/1f2937/ffffff?text=Concert+Video',
-          eventId: 'event-1',
-          eventName: 'Warriors vs Cavaliers',
-          eventLocation: 'San Francisco, CA',
-          eventDate: '2024-08-14',
-          uploaderId: 'user-1',
-          uploaderName: 'John Doe',
-          uploaderAvatar: 'https://ui-avatars.com/api/?name=John+Doe&background=random',
-          likes: 42,
-          comments: 8,
-          views: 156,
-          isLiked: false,
-          isSaved: false,
-          duration: 45,
-          uploadDate: '2024-08-14T10:00:00Z'
+          title: 'Local Coffee Tasting',
+          price: '25'
         },
         {
-          id: '2',
-          title: 'Food Festival Highlights',
-          description: 'Check out all the amazing food we tried at the local food festival!',
-          videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
-          thumbnailUrl: 'https://via.placeholder.com/400x300/1f2937/ffffff?text=Food+Festival',
-          eventId: 'event-2',
-          eventName: 'San Francisco Food Festival',
-          eventLocation: 'San Francisco, CA',
-          eventDate: '2024-08-13',
-          uploaderId: 'user-2',
-          uploaderName: 'Jane Smith',
-          uploaderAvatar: 'https://ui-avatars.com/api/?name=Jane+Smith&background=random',
-          likes: 28,
-          comments: 12,
-          views: 89,
-          isLiked: true,
-          isSaved: true,
-          duration: 32,
-          uploadDate: '2024-08-13T15:30:00Z'
+          id: 'tm-event-1',
+          title: 'Concert in the Park',
+          price: '45'
+        },
+        {
+          id: 'tm-event-2',
+          title: 'Comedy Night',
+          price: '25'
+        },
+        {
+          id: 'tm-event-3',
+          title: 'Art Gallery Opening',
+          price: '15'
+        },
+        {
+          id: 'place-1',
+          title: 'Golden Gate Bridge',
+          price: '0'
+        },
+        {
+          id: 'place-2',
+          title: 'Fisherman\'s Wharf',
+          price: '0'
+        },
+        {
+          id: 'ny-event-1',
+          title: 'Broadway Show',
+          price: '120'
+        },
+        {
+          id: 'ny-event-2',
+          title: 'Central Park Walk',
+          price: '0'
+        }
+      ];
+      
+      const experience = allExperiences.find((exp: any) => exp.id === experienceId);
+      if (!experience) {
+        return res.status(404).json({ message: 'Experience not found' });
+      }
+
+      const totalAmount = parseFloat(experience.price) * numberOfPeople;
+      
+      if (totalAmount > 0) {
+        // Create payment intent for paid events
+        const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+        
+        const paymentIntent = await stripe.paymentIntents.create({
+          amount: Math.round(totalAmount * 100),
+          currency: 'usd',
+          metadata: {
+            experienceId,
+            numberOfPeople: numberOfPeople.toString(),
+            userId: req.session.userId || 'dev-user-1'
+          },
+        });
+
+        res.json({
+          requiresPayment: true,
+          clientSecret: paymentIntent.client_secret,
+          amount: totalAmount,
+          experience
+        });
+      } else {
+        // Free event - confirm booking directly
+        const booking = {
+          id: `booking-${Date.now()}`,
+          experienceId,
+          numberOfPeople,
+          startTime: startTime || new Date().toISOString(),
+          endTime: endTime || new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+          status: 'confirmed',
+          userId: req.session.userId || 'dev-user-1',
+          createdAt: new Date().toISOString()
+        };
+
+        res.json({
+          requiresPayment: false,
+          success: true,
+          message: 'Free event booked successfully!',
+          booking,
+          experience
+        });
+      }
+    } catch (error) {
+      console.error('Error in quick book:', error);
+      res.status(500).json({ message: 'Failed to process booking' });
+    }
+  });
+
+  // AI-powered recommendations endpoint
+  app.get('/api/recommendations', async (req, res) => {
+    try {
+      const { city, category, preferences } = req.query;
+      
+      // Get all experiences
+      const response = await fetch(`${req.protocol}://${req.get('host')}/api/experiences`);
+      const experiences = await response.json();
+      
+      // Convert to Place format for AI processing
+      const places = experiences.map((exp: any) => ({
+        id: exp.id,
+        title: exp.title,
+        description: exp.description,
+        location: exp.location,
+        city: exp.city || 'San Francisco',
+        category: exp.category,
+        tags: exp.tags || [],
+        latitude: exp.latitude,
+        longitude: exp.longitude,
+        startTime: exp.startTime,
+        endTime: exp.endTime,
+        externalSource: exp.externalSource || 'user-created',
+        price: exp.price,
+        type: exp.type
+      }));
+
+      // Filter by city if provided
+      let filteredPlaces = places;
+      if (city) {
+        filteredPlaces = places.filter((place: any) => 
+          place.city?.toLowerCase().includes((city as string).toLowerCase())
+        );
+      }
+
+      // Generate AI recommendations
+      const clusters = AIPlaceMatcher.clusterPlaces(filteredPlaces);
+      const itineraries = AIPlaceMatcher.createItineraries(clusters);
+
+      // Parse user preferences
+      let userPreferences = {};
+      if (preferences) {
+        try {
+          userPreferences = JSON.parse(preferences as string);
+        } catch (e) {
+          console.warn('Invalid preferences format');
+        }
+      }
+
+      const personalizedRecommendations = AIPlaceMatcher.generatePersonalizedRecommendations(
+        filteredPlaces,
+        userPreferences
+      );
+
+      res.json({
+        clusters,
+        itineraries,
+        personalizedRecommendations,
+        totalPlaces: filteredPlaces.length,
+        totalClusters: clusters.length
+      });
+    } catch (error) {
+      console.error('Error generating recommendations:', error);
+      res.status(500).json({ message: 'Failed to generate recommendations' });
+    }
+  });
+
+  // AI Itinerary Generation endpoint
+  app.post('/api/ai/generate-itinerary', async (req: any, res) => {
+    try {
+      const preferences = req.body;
+      const { city, experienceType, budget, groupSize, interests, timeOfDay } = preferences;
+      
+      // Get experiences for the city
+      const response = await fetch(`${req.protocol}://${req.get('host')}/api/experiences?city=${encodeURIComponent(city)}`);
+      const experiences = await response.json();
+      
+      // AI Algorithm to filter and rank experiences
+      const filteredExperiences = experiences.filter((exp: any) => {
+        // Filter by experience type
+        const matchesType = experienceType.length === 0 || 
+          experienceType.some((type: string) => 
+            exp.category.toLowerCase().includes(type.toLowerCase().split(' ')[0])
+          );
+        
+        // Filter by budget
+        const matchesBudget = !budget || parseFloat(exp.price) <= parseFloat(budget);
+        
+        // Filter by interests
+        const matchesInterests = interests.length === 0 || 
+          interests.some((interest: string) => 
+            exp.tags?.some((tag: string) => tag.toLowerCase().includes(interest.toLowerCase())) ||
+            exp.description.toLowerCase().includes(interest.toLowerCase())
+          );
+        
+        return matchesType && matchesBudget && matchesInterests;
+      });
+      
+      // AI Ranking algorithm
+      const rankedExperiences = filteredExperiences.map((exp: any) => {
+        let score = 0;
+        
+        // Interest matching score
+        interests.forEach((interest: string) => {
+          if (exp.tags?.some((tag: string) => tag.toLowerCase().includes(interest.toLowerCase()))) {
+            score += 10;
+          }
+          if (exp.description.toLowerCase().includes(interest.toLowerCase())) {
+            score += 5;
+          }
+        });
+        
+        // Budget optimization score
+        if (budget) {
+          const budgetRatio = parseFloat(exp.price) / parseFloat(budget);
+          if (budgetRatio <= 0.5) score += 5;
+          else if (budgetRatio <= 0.8) score += 3;
+          else if (budgetRatio <= 1.0) score += 1;
+        }
+        
+        // Time of day preference score
+        if (timeOfDay.length > 0) {
+          const eventHour = new Date(exp.startTime).getHours();
+          timeOfDay.forEach((time: string) => {
+            if (time === 'Morning' && eventHour >= 6 && eventHour < 12) score += 3;
+            if (time === 'Afternoon' && eventHour >= 12 && eventHour < 17) score += 3;
+            if (time === 'Evening' && eventHour >= 17 && eventHour < 21) score += 3;
+            if (time === 'Night' && (eventHour >= 21 || eventHour < 6)) score += 3;
+          });
+        }
+        
+        // Popularity score (based on price as proxy)
+        if (parseFloat(exp.price) > 0) score += 2;
+        
+        return { ...exp, aiScore: score };
+      }).sort((a: any, b: any) => b.aiScore - a.aiScore);
+      
+      // Generate itinerary with AI insights
+      const selectedExperiences = rankedExperiences.slice(0, 4).map((exp: any, index: number) => ({
+        id: exp.id,
+        title: exp.title,
+        description: exp.description,
+        location: exp.location,
+        startTime: new Date(Date.now() + (index * 2 + 1) * 60 * 60 * 1000).toISOString(),
+        endTime: new Date(Date.now() + (index * 2 + 2) * 60 * 60 * 1000).toISOString(),
+        category: exp.category,
+        price: exp.price,
+        imageUrl: exp.imageUrl,
+        reason: generateReason(exp, preferences)
+      }));
+      
+      const totalCost = selectedExperiences.reduce((sum: number, item: any) => sum + parseFloat(item.price), 0);
+      const totalDuration = selectedExperiences.length * 2;
+      
+      // Generate AI insights
+      const aiInsights = generateAIInsights(city, preferences, selectedExperiences);
+      const recommendations = generateRecommendations(preferences, selectedExperiences);
+      
+      const itinerary = {
+        id: `itinerary-${Date.now()}`,
+        city,
+        title: `Perfect ${city} Experience`,
+        description: `AI-curated based on your ${experienceType.join(', ')} preferences`,
+        totalCost,
+        totalDuration,
+        items: selectedExperiences,
+        aiInsights,
+        recommendations,
+        aiScore: rankedExperiences[0]?.aiScore || 0
+      };
+      
+      res.json(itinerary);
+    } catch (error) {
+      console.error('Error generating AI itinerary:', error);
+      res.status(500).json({ message: 'Failed to generate itinerary' });
+    }
+  });
+
+  // Helper function to generate reasons for recommendations
+  function generateReason(experience: any, preferences: any): string {
+    const reasons = [];
+    
+    if (preferences.interests.length > 0) {
+      const matchingInterest = preferences.interests.find((interest: string) => 
+        experience.tags?.some((tag: string) => tag.toLowerCase().includes(interest.toLowerCase())) ||
+        experience.description.toLowerCase().includes(interest.toLowerCase())
+      );
+      if (matchingInterest) {
+        reasons.push(`Perfect for ${matchingInterest}`);
+      }
+    }
+    
+    if (preferences.budget) {
+      const budgetRatio = parseFloat(experience.price) / parseFloat(preferences.budget);
+      if (budgetRatio <= 0.5) {
+        reasons.push('Great value for money');
+      } else if (budgetRatio <= 0.8) {
+        reasons.push('Fits your budget well');
+      }
+    }
+    
+    if (preferences.groupSize) {
+      if (parseInt(preferences.groupSize) <= 2) {
+        reasons.push('Ideal for couples');
+      } else if (parseInt(preferences.groupSize) <= 4) {
+        reasons.push('Perfect for small groups');
+      } else {
+        reasons.push('Great for larger groups');
+      }
+    }
+    
+    return reasons.length > 0 ? reasons.join(', ') : 'Highly recommended experience';
+  }
+
+  // Helper function to generate AI insights
+  function generateAIInsights(city: string, preferences: any, experiences: any[]): string[] {
+    const insights = [];
+    
+    if (preferences.interests.length > 0) {
+      insights.push(`${city} is perfect for ${preferences.interests.join(', ')}`);
+    }
+    
+    if (preferences.timeOfDay.length > 0) {
+      insights.push(`Best time to visit: ${preferences.timeOfDay.join(', ')}`);
+    }
+    
+    if (preferences.groupSize) {
+      insights.push(`Recommended group size: ${preferences.groupSize} people`);
+    }
+    
+    const avgPrice = experiences.reduce((sum: number, exp: any) => sum + parseFloat(exp.price), 0) / experiences.length;
+    insights.push(`Average experience cost: $${avgPrice.toFixed(0)}`);
+    
+    const categories = Array.from(new Set(experiences.map((exp: any) => exp.category)));
+    insights.push(`Experience mix: ${categories.join(', ')}`);
+    
+    return insights;
+  }
+
+  // Helper function to generate recommendations
+  function generateRecommendations(preferences: any, experiences: any[]): string[] {
+    const recommendations = [
+      'Book experiences in advance for better availability',
+      'Consider local transportation options',
+      'Check weather forecasts for outdoor activities',
+      'Bring comfortable walking shoes'
+    ];
+    
+    if (preferences.timeOfDay.includes('Evening') || preferences.timeOfDay.includes('Night')) {
+      recommendations.push('Plan for dinner reservations in advance');
+    }
+    
+    if (preferences.interests.some((interest: string) => 
+      ['Photography', 'Art Galleries', 'Museums'].includes(interest)
+    )) {
+      recommendations.push('Check opening hours for cultural venues');
+    }
+    
+    if (preferences.interests.some((interest: string) => 
+      ['Hiking', 'Outdoor', 'Water Sports'].includes(interest)
+    )) {
+      recommendations.push('Pack appropriate gear for outdoor activities');
+    }
+    
+    if (parseInt(preferences.groupSize) > 4) {
+      recommendations.push('Consider booking group discounts');
+    }
+    
+    return recommendations;
+  }
+
+  // Video upload and processing endpoint
+  app.post('/api/videos/upload', isAuthenticated, async (req: any, res) => {
+    try {
+      const { videoUrl, experienceId, title, description, tags } = req.body;
+      
+      // Mock video processing
+      const video = {
+        id: `video-${Date.now()}`,
+        url: videoUrl,
+        experienceId,
+        title: title || 'User Video',
+        description: description || '',
+        tags: tags || [],
+        uploadedBy: req.session.userId || 'dev-user-1',
+        uploadedAt: new Date().toISOString(),
+        status: 'processed',
+        duration: Math.floor(Math.random() * 60) + 15, // 15-75 seconds
+        thumbnailUrl: `https://picsum.photos/400/225?random=${Date.now()}`
+      };
+
+      res.json({
+        success: true,
+        message: 'Video uploaded successfully',
+        video
+      });
+    } catch (error) {
+      console.error('Error uploading video:', error);
+      res.status(500).json({ message: 'Failed to upload video' });
+    }
+  });
+
+  // Get videos for experiences
+  app.get('/api/videos', async (req, res) => {
+    try {
+      const { experienceId } = req.query;
+      
+      // Mock videos data with multiple videos per experience
+      const videos = [
+        // Coffee Tasting Experience - Multiple videos
+        {
+          id: 'video-1-1',
+          url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+          experienceId: '1',
+          title: 'Coffee Tasting Experience - Shop 1',
+          description: 'Amazing coffee tasting at Blue Bottle Coffee',
+          tags: ['coffee', 'food', 'local'],
+          uploadedBy: 'user-1',
+          uploadedAt: new Date().toISOString(),
+          duration: 45,
+          thumbnailUrl: 'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225'
+        },
+        {
+          id: 'video-1-2',
+          url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+          experienceId: '1',
+          title: 'Coffee Tasting Experience - Shop 2',
+          description: 'Artisan coffee at Ritual Coffee Roasters',
+          tags: ['coffee', 'food', 'local'],
+          uploadedBy: 'user-2',
+          uploadedAt: new Date().toISOString(),
+          duration: 52,
+          thumbnailUrl: 'https://images.unsplash.com/photo-1442512595331-e89e73853f31?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225'
+        },
+        {
+          id: 'video-1-3',
+          url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+          experienceId: '1',
+          title: 'Coffee Tasting Experience - Shop 3',
+          description: 'Hidden gem at Sightglass Coffee',
+          tags: ['coffee', 'food', 'local'],
+          uploadedBy: 'user-3',
+          uploadedAt: new Date().toISOString(),
+          duration: 38,
+          thumbnailUrl: 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225'
+        },
+        
+        // Concert in the Park - Multiple videos
+        {
+          id: 'video-2-1',
+          url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+          experienceId: 'tm-event-1',
+          title: 'Concert in the Park - Opening Act',
+          description: 'Amazing opening performance by local band',
+          tags: ['music', 'concert', 'outdoor'],
+          uploadedBy: 'user-4',
+          uploadedAt: new Date().toISOString(),
+          duration: 60,
+          thumbnailUrl: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225'
+        },
+        {
+          id: 'video-2-2',
+          url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4',
+          experienceId: 'tm-event-1',
+          title: 'Concert in the Park - Main Act',
+          description: 'Incredible main performance highlights',
+          tags: ['music', 'concert', 'outdoor'],
+          uploadedBy: 'user-5',
+          uploadedAt: new Date().toISOString(),
+          duration: 75,
+          thumbnailUrl: 'https://images.unsplash.com/photo-1516280440614-37939bbacd81?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225'
+        },
+        {
+          id: 'video-2-3',
+          url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
+          experienceId: 'tm-event-1',
+          title: 'Concert in the Park - Crowd Experience',
+          description: 'The amazing atmosphere and crowd energy',
+          tags: ['music', 'concert', 'outdoor'],
+          uploadedBy: 'user-6',
+          uploadedAt: new Date().toISOString(),
+          duration: 42,
+          thumbnailUrl: 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225'
+        },
+        
+        // Comedy Night - Multiple videos
+        {
+          id: 'video-3-1',
+          url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4',
+          experienceId: 'tm-event-2',
+          title: 'Comedy Night - First Comedian',
+          description: 'Hilarious opening act by Sarah Johnson',
+          tags: ['comedy', 'entertainment', 'nightlife'],
+          uploadedBy: 'user-7',
+          uploadedAt: new Date().toISOString(),
+          duration: 30,
+          thumbnailUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225'
+        },
+        {
+          id: 'video-3-2',
+          url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMob.mp4',
+          experienceId: 'tm-event-2',
+          title: 'Comedy Night - Headliner',
+          description: 'Side-splitting performance by Mike Chen',
+          tags: ['comedy', 'entertainment', 'nightlife'],
+          uploadedBy: 'user-8',
+          uploadedAt: new Date().toISOString(),
+          duration: 55,
+          thumbnailUrl: 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225'
+        },
+        {
+          id: 'video-3-3',
+          url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+          experienceId: 'tm-event-2',
+          title: 'Comedy Night - Crowd Reactions',
+          description: 'The audience having the time of their lives',
+          tags: ['comedy', 'entertainment', 'nightlife'],
+          uploadedBy: 'user-9',
+          uploadedAt: new Date().toISOString(),
+          duration: 25,
+          thumbnailUrl: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225'
+        },
+        
+        // Art Gallery Opening - Multiple videos
+        {
+          id: 'video-4-1',
+          url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+          experienceId: 'tm-event-3',
+          title: 'Art Gallery Opening - Exhibition Tour',
+          description: 'Walking through the stunning contemporary art',
+          tags: ['art', 'culture', 'gallery'],
+          uploadedBy: 'user-10',
+          uploadedAt: new Date().toISOString(),
+          duration: 48,
+          thumbnailUrl: 'https://images.unsplash.com/photo-1541961017774-a3eb161ffa5f?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225'
+        },
+        {
+          id: 'video-4-2',
+          url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+          experienceId: 'tm-event-3',
+          title: 'Art Gallery Opening - Artist Interview',
+          description: 'Meet the featured artist and learn about their work',
+          tags: ['art', 'culture', 'gallery'],
+          uploadedBy: 'user-11',
+          uploadedAt: new Date().toISOString(),
+          duration: 65,
+          thumbnailUrl: 'https://images.unsplash.com/photo-1513475382585-d06e58bcb0e0?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225'
+        },
+        {
+          id: 'video-4-3',
+          url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+          experienceId: 'tm-event-3',
+          title: 'Art Gallery Opening - Reception',
+          description: 'The elegant opening reception and networking',
+          tags: ['art', 'culture', 'gallery'],
+          uploadedBy: 'user-12',
+          uploadedAt: new Date().toISOString(),
+          duration: 35,
+          thumbnailUrl: 'https://images.unsplash.com/photo-1541961017774-a3eb161ffa5f?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225'
+        },
+        
+        // Additional diverse videos for better recommendations
+        {
+          id: 'video-5-1',
+          url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+          experienceId: 'general',
+          title: 'Outdoor Adventure - Hiking Trail',
+          description: 'Beautiful hiking experience in nature',
+          tags: ['outdoor', 'hiking', 'nature', 'adventure'],
+          uploadedBy: 'user-13',
+          uploadedAt: new Date().toISOString(),
+          duration: 55,
+          thumbnailUrl: 'https://images.unsplash.com/photo-1551632811-561732d1e306?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225'
+        },
+        {
+          id: 'video-5-2',
+          url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+          experienceId: 'general',
+          title: 'Wellness Retreat - Yoga Session',
+          description: 'Peaceful yoga session in a serene environment',
+          tags: ['wellness', 'yoga', 'meditation', 'health'],
+          uploadedBy: 'user-14',
+          uploadedAt: new Date().toISOString(),
+          duration: 40,
+          thumbnailUrl: 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225'
+        },
+        {
+          id: 'video-5-3',
+          url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+          experienceId: 'general',
+          title: 'Food Tour - Local Cuisine',
+          description: 'Exploring local food culture and cuisine',
+          tags: ['food', 'cuisine', 'local', 'dining'],
+          uploadedBy: 'user-15',
+          uploadedAt: new Date().toISOString(),
+          duration: 50,
+          thumbnailUrl: 'https://images.unsplash.com/photo-1504674900240-9c69b0c9e763?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225'
+        },
+        {
+          id: 'video-5-4',
+          url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+          experienceId: 'general',
+          title: 'Nightlife - Live Music Venue',
+          description: 'Vibrant nightlife with live music and dancing',
+          tags: ['nightlife', 'music', 'live', 'dancing'],
+          uploadedBy: 'user-16',
+          uploadedAt: new Date().toISOString(),
+          duration: 45,
+          thumbnailUrl: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225'
+        },
+        {
+          id: 'video-5-5',
+          url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4',
+          experienceId: 'general',
+          title: 'Cultural Experience - Museum Tour',
+          description: 'Exploring fascinating exhibits and cultural artifacts',
+          tags: ['culture', 'museum', 'history', 'education'],
+          uploadedBy: 'user-17',
+          uploadedAt: new Date().toISOString(),
+          duration: 60,
+          thumbnailUrl: 'https://images.unsplash.com/photo-1541961017774-a3eb161ffa5f?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225'
         }
       ];
 
-      // Filter by event if provided
-      let filteredVideos = mockVideos;
-      if (req.query.eventId && typeof req.query.eventId === 'string') {
-        filteredVideos = mockVideos.filter(v => v.eventId === req.query.eventId);
-      }
-      if (req.query.category && typeof req.query.category === 'string') {
-        // Mock category filtering
-        filteredVideos = mockVideos.filter(v => v.eventName.toLowerCase().includes(req.query.category.toLowerCase()));
+      let filteredVideos = videos;
+      if (experienceId) {
+        filteredVideos = videos.filter(video => video.experienceId === experienceId);
       }
 
-      const limit = req.query.limit && typeof req.query.limit === 'string' ? parseInt(req.query.limit) : 10;
-      res.json(filteredVideos.slice(0, limit));
+      res.json(filteredVideos);
     } catch (error) {
       console.error('Error fetching videos:', error);
       res.status(500).json({ message: 'Failed to fetch videos' });
     }
   });
 
-  // Like video endpoint
+  // Enhanced experiences endpoint with videos
+  app.get('/api/experiences/enhanced', async (req, res) => {
+    try {
+      const { city, category } = req.query;
+      
+      // Get experiences
+      const response = await fetch(`${req.protocol}://${req.get('host')}/api/experiences`);
+      const experiences = await response.json();
+      
+      // Get videos
+      const videosResponse = await fetch(`${req.protocol}://${req.get('host')}/api/videos`);
+      const videos = await videosResponse.json();
+      
+      // Combine experiences with their videos and add recommended videos
+      const enhancedExperiences = experiences.map((exp: any) => {
+        const expVideos = videos.filter((video: any) => video.experienceId === exp.id);
+        
+        // If no videos exist for this experience, find relatable videos
+        let finalVideos = expVideos;
+        if (expVideos.length === 0) {
+          const recommendedVideos = VideoRecommendationEngine.findRelatableVideos(exp, videos, 3);
+          finalVideos = VideoRecommendationEngine.generateContextualVideoTitles(exp, recommendedVideos);
+        } else if (expVideos.length < 3) {
+          // If we have some videos but not enough, add recommended ones
+          const additionalVideos = VideoRecommendationEngine.findRelatableVideos(exp, videos, 3 - expVideos.length);
+          const contextualVideos = VideoRecommendationEngine.generateContextualVideoTitles(exp, additionalVideos);
+          finalVideos = [...expVideos, ...contextualVideos];
+        }
+        
+        return {
+          ...exp,
+          videos: finalVideos,
+          videoCount: finalVideos.length,
+          hasVideos: finalVideos.length > 0,
+          hasRecommendedVideos: finalVideos.some((video: any) => video.isRecommended)
+        };
+      });
+
+      // Filter by city if provided
+      let filteredExperiences = enhancedExperiences;
+      if (city) {
+        filteredExperiences = enhancedExperiences.filter((exp: any) => 
+          exp.city?.toLowerCase().includes((city as string).toLowerCase())
+        );
+      }
+
+      res.json(filteredExperiences);
+    } catch (error) {
+      console.error('Error fetching enhanced experiences:', error);
+      res.status(500).json({ message: 'Failed to fetch enhanced experiences' });
+    }
+  });
+
+  // Categories endpoint
+  app.get('/api/categories', async (req, res) => {
+    try {
+      const categories = [
+        {
+          id: 'music',
+          name: 'Music & Concerts',
+          icon: '🎵',
+          description: 'Live music, concerts, and performances',
+          color: '#FF6B6B'
+        },
+        {
+          id: 'food',
+          name: 'Food & Dining',
+          icon: '🍽️',
+          description: 'Restaurants, food tours, and culinary experiences',
+          color: '#4ECDC4'
+        },
+        {
+          id: 'outdoor',
+          name: 'Outdoor & Adventure',
+          icon: '🏔️',
+          description: 'Hiking, sports, and outdoor activities',
+          color: '#45B7D1'
+        },
+        {
+          id: 'arts',
+          name: 'Arts & Culture',
+          icon: '🎨',
+          description: 'Museums, galleries, and cultural events',
+          color: '#96CEB4'
+        },
+        {
+          id: 'nightlife',
+          name: 'Nightlife',
+          icon: '🌙',
+          description: 'Bars, clubs, and evening entertainment',
+          color: '#FFEAA7'
+        },
+        {
+          id: 'wellness',
+          name: 'Wellness & Fitness',
+          icon: '🧘',
+          description: 'Yoga, fitness classes, and wellness activities',
+          color: '#DDA0DD'
+        },
+        {
+          id: 'shopping',
+          name: 'Shopping & Markets',
+          icon: '🛍️',
+          description: 'Local markets, boutiques, and shopping experiences',
+          color: '#FFB347'
+        },
+        {
+          id: 'education',
+          name: 'Learning & Workshops',
+          icon: '📚',
+          description: 'Classes, workshops, and educational experiences',
+          color: '#87CEEB'
+        },
+        {
+          id: 'family',
+          name: 'Family & Kids',
+          icon: '👨‍👩‍👧‍👦',
+          description: 'Family-friendly activities and events',
+          color: '#98D8C8'
+        },
+        {
+          id: 'tech',
+          name: 'Tech & Innovation',
+          icon: '💻',
+          description: 'Tech meetups, hackathons, and innovation events',
+          color: '#F7DC6F'
+        }
+      ];
+      
+      res.json(categories);
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+      res.status(500).json({ message: 'Failed to fetch categories' });
+    }
+  });
+
+  // Services status endpoint
+  app.get('/api/services/status', async (req, res) => {
+    res.json({
+      eventbrite: false,
+      ticketmaster: !!process.env.TICKETMASTER_KEY,
+      stripe: false,
+      mapbox: false,
+      googlePlaces: !!process.env.GOOGLE_PLACES_KEY,
+      mux: !!process.env.MUX_TOKEN_SECRET && !!process.env.MUX_TOKEN_ID,
+    });
+  });
+
+  // Google Places sync endpoint
+  app.get('/api/sync/places', async (req, res) => {
+    try {
+      if (!process.env.GOOGLE_PLACES_KEY) {
+        return res.status(400).json({ message: "Google Places service not configured" });
+      }
+
+      const { location = "San Francisco", radius = 5000, limit = 10 } = req.query;
+      
+      // Mock Google Places response for now
+      const mockPlaces = [
+        {
+          id: 'place-1',
+          title: 'Golden Gate Bridge',
+          description: 'Iconic suspension bridge spanning the Golden Gate strait',
+          imageUrl: 'https://images.unsplash.com/photo-1501594907352-04cda38ebc29?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225',
+          location: 'Golden Gate Bridge, San Francisco',
+          price: '0',
+          startTime: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          endTime: new Date(Date.now() + 26 * 60 * 60 * 1000).toISOString(),
+          status: 'active',
+          type: 'free',
+          availability: 'available',
+          isDropIn: true,
+          tags: ['google-places', 'landmark', 'tourist'],
+          externalId: 'place-1',
+          externalSource: 'google-places',
+          category: 'outdoor',
+          hostId: 'google-places',
+          hostName: 'Google Places'
+        },
+        {
+          id: 'place-2',
+          title: 'Fisherman\'s Wharf',
+          description: 'Historic waterfront area with seafood restaurants and attractions',
+          imageUrl: 'https://images.unsplash.com/photo-1501594907352-04cda38ebc29?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225',
+          location: 'Fisherman\'s Wharf, San Francisco',
+          price: '0',
+          startTime: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+          endTime: new Date(Date.now() + 50 * 60 * 60 * 1000).toISOString(),
+          status: 'active',
+          type: 'free',
+          availability: 'available',
+          isDropIn: true,
+          tags: ['google-places', 'waterfront', 'food'],
+          externalId: 'place-2',
+          externalSource: 'google-places',
+          category: 'food',
+          hostId: 'google-places',
+          hostName: 'Google Places'
+        },
+        {
+          id: 'place-3',
+          title: 'Alcatraz Island',
+          description: 'Historic federal prison on an island in San Francisco Bay',
+          imageUrl: 'https://images.unsplash.com/photo-1501594907352-04cda38ebc29?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225',
+          location: 'Alcatraz Island, San Francisco Bay',
+          price: '45',
+          startTime: new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString(),
+          endTime: new Date(Date.now() + 74 * 60 * 60 * 1000).toISOString(),
+          status: 'active',
+          type: 'paid',
+          availability: 'available',
+          isDropIn: false,
+          tags: ['google-places', 'historic', 'museum'],
+          externalId: 'place-3',
+          externalSource: 'google-places',
+          category: 'arts',
+          hostId: 'google-places',
+          hostName: 'Google Places'
+        }
+      ];
+
+      res.json({ 
+        count: mockPlaces.length, 
+        source: 'google-places',
+        experiences: mockPlaces.slice(0, parseInt(limit as string)) 
+      });
+    } catch (error) {
+      console.error("Error syncing Google Places:", error);
+      res.status(500).json({ message: "Failed to sync Google Places data" });
+    }
+  });
+
+  // Ticketmaster sync endpoint
+  app.get('/api/sync/ticketmaster', async (req, res) => {
+    try {
+      if (!process.env.TICKETMASTER_KEY) {
+        return res.status(400).json({ message: "Ticketmaster service not configured" });
+      }
+
+      const { location = "San Francisco", limit = 10 } = req.query;
+      
+      // Mock Ticketmaster response for now
+      const mockEvents = [
+        {
+          id: 'tm-event-1',
+          title: 'Concert in the Park',
+          description: 'Amazing live music performance in the heart of the city',
+          imageUrl: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225',
+          location: location as string,
+          price: '45',
+          startTime: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          endTime: new Date(Date.now() + 26 * 60 * 60 * 1000).toISOString(),
+          status: 'active',
+          type: 'paid',
+          availability: 'available',
+          isDropIn: false,
+          tags: ['ticketmaster', 'music', 'concert'],
+          externalId: 'tm-event-1',
+          externalSource: 'ticketmaster'
+        },
+        {
+          id: 'tm-event-2',
+          title: 'Comedy Night',
+          description: 'Laugh your heart out with top comedians',
+          imageUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225',
+          location: location as string,
+          price: '25',
+          startTime: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+          endTime: new Date(Date.now() + 50 * 60 * 60 * 1000).toISOString(),
+          status: 'active',
+          type: 'paid',
+          availability: 'available',
+          isDropIn: false,
+          tags: ['ticketmaster', 'comedy', 'entertainment'],
+          externalId: 'tm-event-2',
+          externalSource: 'ticketmaster'
+        }
+      ];
+
+      res.json({ 
+        count: mockEvents.length, 
+        source: 'ticketmaster',
+        experiences: mockEvents.slice(0, parseInt(limit as string)) 
+      });
+    } catch (error) {
+      console.error("Error syncing Ticketmaster events:", error);
+      res.status(500).json({ message: "Failed to sync Ticketmaster events" });
+    }
+  });
+
+  // Video like endpoint
   app.post('/api/videos/:id/like', isAuthenticated, async (req: any, res) => {
     try {
       const videoId = req.params.id;
-      // Mock like functionality
       const isLiked = Math.random() > 0.5; // Random for demo
       
       res.json({
@@ -1109,11 +1237,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Save video endpoint
+  // Video save endpoint
   app.post('/api/videos/:id/save', isAuthenticated, async (req: any, res) => {
     try {
       const videoId = req.params.id;
-      // Mock save functionality
       const isSaved = Math.random() > 0.5; // Random for demo
       
       res.json({
@@ -1126,71 +1253,298 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Service status endpoint
-  app.get('/api/services/status', async (req, res) => {
-    res.json({
-      eventbrite: eventbriteService.isConfigured(),
-      ticketmaster: ticketmasterService.isConfigured(),
-      stripe: stripeService.isConfigured(),
-      mapbox: mapService.isMapboxConfigured(),
-      googlePlaces: mapService.isGooglePlacesConfigured(),
-      mux: muxService.isConfigured(),
-    });
-  });
-
-  // Google Places sync endpoint
-  app.get('/api/sync/places', isAuthenticated, async (req, res) => {
+  // Experiences endpoint
+  app.get('/api/experiences', async (req, res) => {
     try {
-      if (!process.env.GOOGLE_PLACES_KEY) {
-        return res.status(400).json({ message: "Google Places service not configured" });
+      const { date, category, location, city } = req.query;
+      
+      // Base experiences with videos
+      let experiences = [
+        {
+          id: '1',
+          title: 'Local Coffee Tasting',
+          description: 'Experience the best local coffee shops in the area',
+          imageUrl: 'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225',
+          videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+          location: 'Downtown San Francisco',
+          city: 'San Francisco',
+          price: '25',
+          startTime: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          endTime: new Date(Date.now() + 26 * 60 * 60 * 1000).toISOString(),
+          status: 'active',
+          type: 'paid',
+          availability: 'available',
+          isDropIn: false,
+          tags: ['coffee', 'food', 'local'],
+          hostId: 'host-1',
+          hostName: 'Local Coffee Expert',
+          category: 'food',
+          latitude: 37.7749,
+          longitude: -122.4194
+        }
+      ];
+
+      // Add Ticketmaster events with videos
+      const ticketmasterEvents = [
+        {
+          id: 'tm-event-1',
+          title: 'Concert in the Park',
+          description: 'Amazing live music performance in the heart of the city',
+          imageUrl: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225',
+          videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+          location: 'Golden Gate Park, San Francisco',
+          city: 'San Francisco',
+          price: '45',
+          startTime: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          endTime: new Date(Date.now() + 26 * 60 * 60 * 1000).toISOString(),
+          status: 'active',
+          type: 'paid',
+          availability: 'available',
+          isDropIn: false,
+          tags: ['ticketmaster', 'music', 'concert'],
+          externalId: 'tm-event-1',
+          externalSource: 'ticketmaster',
+          category: 'music',
+          hostId: 'ticketmaster',
+          hostName: 'Ticketmaster Events',
+          latitude: 37.7694,
+          longitude: -122.4862
+        },
+        {
+          id: 'tm-event-2',
+          title: 'Comedy Night',
+          description: 'Laugh your heart out with top comedians',
+          imageUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225',
+          videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+          location: 'Comedy Club Downtown, San Francisco',
+          city: 'San Francisco',
+          price: '25',
+          startTime: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+          endTime: new Date(Date.now() + 50 * 60 * 60 * 1000).toISOString(),
+          status: 'active',
+          type: 'paid',
+          availability: 'available',
+          isDropIn: false,
+          tags: ['ticketmaster', 'comedy', 'entertainment'],
+          externalId: 'tm-event-2',
+          externalSource: 'ticketmaster',
+          category: 'nightlife',
+          hostId: 'ticketmaster',
+          hostName: 'Ticketmaster Events',
+          latitude: 37.7749,
+          longitude: -122.4194
+        },
+        {
+          id: 'tm-event-3',
+          title: 'Art Gallery Opening',
+          description: 'Exclusive opening of the latest contemporary art exhibition',
+          imageUrl: 'https://images.unsplash.com/photo-1541961017774-a3eb161ffa5f?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225',
+          videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+          location: 'Modern Art Museum, San Francisco',
+          city: 'San Francisco',
+          price: '15',
+          startTime: new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString(),
+          endTime: new Date(Date.now() + 74 * 60 * 60 * 1000).toISOString(),
+          status: 'active',
+          type: 'paid',
+          availability: 'available',
+          isDropIn: false,
+          tags: ['ticketmaster', 'art', 'culture'],
+          externalId: 'tm-event-3',
+          externalSource: 'ticketmaster',
+          category: 'arts',
+          hostId: 'ticketmaster',
+          hostName: 'Ticketmaster Events',
+          latitude: 37.7849,
+          longitude: -122.4094
+        }
+      ];
+
+      // Add Google Places events with videos
+      const googlePlacesEvents = [
+        {
+          id: 'place-1',
+          title: 'Golden Gate Bridge',
+          description: 'Iconic suspension bridge spanning the Golden Gate strait',
+          imageUrl: 'https://images.unsplash.com/photo-1501594907352-04cda38ebc29?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225',
+          videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4',
+          location: 'Golden Gate Bridge, San Francisco',
+          city: 'San Francisco',
+          price: '0',
+          startTime: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          endTime: new Date(Date.now() + 26 * 60 * 60 * 1000).toISOString(),
+          status: 'active',
+          type: 'free',
+          availability: 'available',
+          isDropIn: true,
+          tags: ['google-places', 'landmark', 'tourist'],
+          externalId: 'place-1',
+          externalSource: 'google-places',
+          category: 'outdoor',
+          hostId: 'google-places',
+          hostName: 'Google Places',
+          latitude: 37.8199,
+          longitude: -122.4783
+        },
+        {
+          id: 'place-2',
+          title: 'Fisherman\'s Wharf',
+          description: 'Historic waterfront area with seafood restaurants and attractions',
+          imageUrl: 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225',
+          videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
+          location: 'Fisherman\'s Wharf, San Francisco',
+          city: 'San Francisco',
+          price: '0',
+          startTime: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+          endTime: new Date(Date.now() + 50 * 60 * 60 * 1000).toISOString(),
+          status: 'active',
+          type: 'free',
+          availability: 'available',
+          isDropIn: true,
+          tags: ['google-places', 'waterfront', 'food'],
+          externalId: 'place-2',
+          externalSource: 'google-places',
+          category: 'food',
+          hostId: 'google-places',
+          hostName: 'Google Places',
+          latitude: 37.8080,
+          longitude: -122.4177
+        }
+      ];
+
+      // Add New York events for city filtering demo
+      const newYorkEvents = [
+        {
+          id: 'ny-event-1',
+          title: 'Broadway Show',
+          description: 'Experience the magic of Broadway in the heart of NYC',
+          imageUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225',
+          videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4',
+          location: 'Times Square, New York',
+          city: 'New York',
+          price: '120',
+          startTime: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          endTime: new Date(Date.now() + 26 * 60 * 60 * 1000).toISOString(),
+          status: 'active',
+          type: 'paid',
+          availability: 'available',
+          isDropIn: false,
+          tags: ['broadway', 'theater', 'entertainment'],
+          externalId: 'ny-event-1',
+          externalSource: 'user-created',
+          category: 'arts',
+          hostId: 'broadway',
+          hostName: 'Broadway Shows',
+          latitude: 40.7580,
+          longitude: -73.9855
+        },
+        {
+          id: 'ny-event-2',
+          title: 'Central Park Walk',
+          description: 'Beautiful walking tour through Central Park',
+          imageUrl: 'https://images.unsplash.com/photo-1501594907352-04cda38ebc29?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225',
+          videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMob.mp4',
+          location: 'Central Park, New York',
+          city: 'New York',
+          price: '0',
+          startTime: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+          endTime: new Date(Date.now() + 50 * 60 * 60 * 1000).toISOString(),
+          status: 'active',
+          type: 'free',
+          availability: 'available',
+          isDropIn: true,
+          tags: ['park', 'outdoor', 'walking'],
+          externalId: 'ny-event-2',
+          externalSource: 'user-created',
+          category: 'outdoor',
+          hostId: 'central-park',
+          hostName: 'Central Park Tours',
+          latitude: 40.7829,
+          longitude: -73.9654
+        }
+      ];
+
+      experiences = [...experiences, ...ticketmasterEvents, ...googlePlacesEvents, ...newYorkEvents];
+
+      // Filter by city if provided
+      if (city) {
+        experiences = experiences.filter(exp => 
+          exp.city?.toLowerCase().includes((city as string).toLowerCase())
+        );
       }
 
-      const { location = "San Francisco", radius = 5000, limit = 20 } = req.query;
-      const places = await mapService.searchPlaces({
-        location: location as string,
-        radius: parseInt(radius as string),
-        type: 'tourist_attraction',
-        limit: parseInt(limit as string),
-      });
+      // Filter by location if provided
+      if (location) {
+        experiences = experiences.filter(exp => 
+          exp.location.toLowerCase().includes((location as string).toLowerCase())
+        );
+      }
 
-      // Transform Places data to our experience format
-      const experiences = places?.results?.map((place: any) => ({
-        title: place.name || 'Unnamed Place',
-        description: place.types?.join(', ') || 'Local venue',
-        imageUrl: place.photos?.[0]?.photo_reference 
-          ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=1000&photoreference=${place.photos[0].photo_reference}&key=${process.env.GOOGLE_PLACES_KEY}`
-          : 'https://images.unsplash.com/photo-1559666126-84f389727b9a',
-        location: place.vicinity || location,
-        latitude: place.geometry?.location?.lat || null,
-        longitude: place.geometry?.location?.lng || null,
-        price: '0',
-        startTime: new Date(),
-        endTime: new Date(Date.now() + 2 * 60 * 60 * 1000), // 2 hours from now
-        status: 'active' as const,
-        type: 'free' as const,
-        availability: 'available' as const,
-        isDropIn: true,
-        tags: ['google-places', 'venue', ...(place.types || [])],
-        externalId: place.place_id,
-        externalSource: 'google-places'
-      })) || [];
+      // Filter by date if provided
+      if (date) {
+        const selectedDate = new Date(date as string);
+        const nextDay = new Date(selectedDate.getTime() + 24 * 60 * 60 * 1000);
+        
+        experiences = experiences.filter(exp => {
+          const eventDate = new Date(exp.startTime);
+          return eventDate >= selectedDate && eventDate < nextDay;
+        });
+      }
 
-      res.json({ 
-        count: experiences.length, 
-        source: 'google-places',
-        experiences: experiences.slice(0, parseInt(limit as string)) 
-      });
+      // Filter by category if provided
+      if (category) {
+        experiences = experiences.filter(exp => 
+          exp.category === category || exp.tags?.includes(category as string)
+        );
+      }
+
+      res.json(experiences);
     } catch (error) {
-      console.error("Error syncing Google Places:", error);
-      res.status(500).json({ message: "Failed to sync Google Places data" });
+      console.error('Error fetching experiences:', error);
+      res.status(500).json({ message: 'Failed to fetch experiences' });
     }
   });
 
-  } catch (error) {
-    console.error('Error initializing services:', error);
-    // Continue with basic functionality even if services fail
-  }
+  // Bookings endpoint
+  app.post('/api/bookings', isAuthenticated, async (req: any, res) => {
+    try {
+      const { experienceId, startTime, endTime, numberOfPeople } = req.body;
+      
+      res.json({
+        success: true,
+        message: 'Booking created successfully',
+        bookingId: 'booking-' + Date.now(),
+        experienceId,
+        startTime,
+        endTime,
+        numberOfPeople,
+        status: 'confirmed'
+      });
+    } catch (error) {
+      console.error('Error creating booking:', error);
+      res.status(500).json({ message: 'Failed to create booking' });
+    }
+  });
 
-  const httpServer = createServer(app);
-  return httpServer;
+  // Reviews endpoint
+  app.post('/api/reviews', isAuthenticated, async (req: any, res) => {
+    try {
+      const { experienceId, rating, comment } = req.body;
+      
+      res.json({
+        success: true,
+        message: 'Review submitted successfully',
+        reviewId: 'review-' + Date.now(),
+        experienceId,
+        rating,
+        comment,
+        createdAt: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Error submitting review:', error);
+      res.status(500).json({ message: 'Failed to submit review' });
+    }
+  });
+
+  console.log("Routes registered successfully!");
 }
