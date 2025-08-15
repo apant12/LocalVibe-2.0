@@ -31,6 +31,7 @@ export class AIPlaceMatcher {
   private static readonly EARTH_RADIUS = 6371; // km
   private static readonly PROXIMITY_THRESHOLD = 2; // km
   private static readonly TIME_WINDOW = 24 * 60 * 60 * 1000; // 24 hours in ms
+  private static readonly GOOGLE_PLACES_API_KEY = process.env.GOOGLE_PLACES_API_KEY;
 
   /**
    * Calculate distance between two points using Haversine formula
@@ -271,6 +272,8 @@ export class AIPlaceMatcher {
 }
 
 export class VideoRecommendationEngine {
+  private static readonly GOOGLE_PLACES_API_KEY = process.env.GOOGLE_PLACES_API_KEY;
+  
   // Video similarity scoring based on multiple factors
   static calculateVideoSimilarity(event: any, video: any): number {
     let score = 0;
@@ -548,5 +551,278 @@ export class VideoRecommendationEngine {
         isContextual: true
       };
     });
+  }
+
+  /**
+   * Fetch real places from Google Places API
+   */
+  static async fetchGooglePlaces(city: string, category: string, limit: number = 10): Promise<any[]> {
+    if (!this.GOOGLE_PLACES_API_KEY) {
+      console.warn('Google Places API key not configured, using mock data');
+      return this.getMockGooglePlaces(city, category, limit);
+    }
+
+    try {
+      // Get city coordinates first
+      const cityCoords = await this.getCityCoordinates(city);
+      if (!cityCoords) {
+        throw new Error(`Could not find coordinates for city: ${city}`);
+      }
+
+      // Map categories to Google Places types
+      const placeType = this.mapCategoryToGoogleType(category);
+      
+      // Fetch nearby places
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/place/nearbysearch/json?` +
+        `location=${cityCoords.lat},${cityCoords.lng}&radius=5000&type=${placeType}&key=${this.GOOGLE_PLACES_API_KEY}`
+      );
+
+      if (!response.ok) {
+        throw new Error(`Google Places API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      if (data.status !== 'OK') {
+        throw new Error(`Google Places API error: ${data.status}`);
+      }
+
+      // Transform Google Places data to our format
+      return data.results.slice(0, limit).map((place: any, index: number) => ({
+        id: place.place_id,
+        title: place.name,
+        description: this.generateDescriptionFromGooglePlace(place, category),
+        location: place.vicinity,
+        city: city,
+        category: category,
+        tags: this.generateTagsFromGooglePlace(place, category),
+        latitude: place.geometry.location.lat,
+        longitude: place.geometry.location.lng,
+        startTime: '09:00', // Default, would be customized based on place type
+        endTime: '17:00',   // Default, would be customized based on place type
+        externalSource: 'google-places',
+        price: this.getPriceLevel(place.price_level),
+        type: place.price_level === 0 ? 'free' : 'paid',
+        rating: place.rating,
+        reviewCount: place.user_ratings_total,
+        photos: place.photos ? place.photos.slice(0, 3).map((photo: any) => 
+          `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${photo.photo_reference}&key=${this.GOOGLE_PLACES_API_KEY}`
+        ) : [],
+        icon: place.icon,
+        openingHours: place.opening_hours?.weekday_text || [],
+        website: place.website,
+        phone: place.formatted_phone_number
+      }));
+
+    } catch (error) {
+      console.error('Error fetching Google Places:', error);
+      return this.getMockGooglePlaces(city, category, limit);
+    }
+  }
+
+  /**
+   * Get city coordinates using Google Geocoding API
+   */
+  private static async getCityCoordinates(city: string): Promise<{lat: number, lng: number} | null> {
+    try {
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(city)}&key=${this.GOOGLE_PLACES_API_KEY}`
+      );
+
+      if (!response.ok) return null;
+
+      const data = await response.json();
+      
+      if (data.status === 'OK' && data.results.length > 0) {
+        const location = data.results[0].geometry.location;
+        return { lat: location.lat, lng: location.lng };
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error getting city coordinates:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Map our categories to Google Places types
+   */
+  private static mapCategoryToGoogleType(category: string): string {
+    const categoryMap: Record<string, string> = {
+      'food': 'restaurant',
+      'entertainment': 'amusement_park',
+      'outdoor': 'park',
+      'culture': 'museum',
+      'shopping': 'shopping_mall',
+      'nightlife': 'bar',
+      'music': 'night_club',
+      'arts': 'art_gallery',
+      'sports': 'gym',
+      'wellness': 'spa'
+    };
+
+    return categoryMap[category] || 'establishment';
+  }
+
+  /**
+   * Generate description from Google Place data
+   */
+  private static generateDescriptionFromGooglePlace(place: any, category: string): string {
+    const baseDescription = `${place.name} is a ${category} located in ${place.vicinity}`;
+    
+    if (place.rating) {
+      return `${baseDescription}. It has a ${place.rating}/5 rating from ${place.user_ratings_total} reviews.`;
+    }
+    
+    return baseDescription;
+  }
+
+  /**
+   * Generate tags from Google Place data
+   */
+  private static generateTagsFromGooglePlace(place: any, category: string): string[] {
+    const tags = [category, 'google-places'];
+    
+    if (place.types) {
+      tags.push(...place.types.slice(0, 3));
+    }
+    
+    if (place.rating && place.rating >= 4.0) {
+      tags.push('highly-rated');
+    }
+    
+    if (place.price_level === 0) {
+      tags.push('free');
+    } else if (place.price_level >= 3) {
+      tags.push('luxury');
+    }
+    
+    return tags;
+  }
+
+  /**
+   * Get price level description
+   */
+  private static getPriceLevel(priceLevel?: number): string {
+    if (!priceLevel) return '0';
+    
+    const priceMap: Record<number, string> = {
+      0: '0',
+      1: '15',
+      2: '35',
+      3: '75',
+      4: '150'
+    };
+    
+    return priceMap[priceLevel] || '0';
+  }
+
+  /**
+   * Get mock Google Places data when API is not available
+   */
+  private static getMockGooglePlaces(city: string, category: string, limit: number): any[] {
+    const mockPlaces = [
+      {
+        id: `mock-${city}-${category}-1`,
+        title: `${city} ${category} Experience`,
+        description: `Amazing ${category} experience in ${city}`,
+        location: `${city} Downtown`,
+        city: city,
+        category: category,
+        tags: [category, 'mock', city.toLowerCase()],
+        latitude: 37.7749,
+        longitude: -122.4194,
+        startTime: '09:00',
+        endTime: '17:00',
+        externalSource: 'google-places',
+        price: '25',
+        type: 'paid' as const,
+        rating: 4.2,
+        reviewCount: 150,
+        photos: [
+          'https://images.unsplash.com/photo-1504674900240-9c69b0c9e763?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=300',
+          'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=300'
+        ],
+        icon: 'https://maps.gstatic.com/mapfiles/place_api/icons/v1/generic_business-71.png',
+        openingHours: ['Monday: 9:00 AM – 5:00 PM', 'Tuesday: 9:00 AM – 5:00 PM'],
+        website: 'https://example.com',
+        phone: '+1 (555) 123-4567'
+      }
+    ];
+
+    // Generate more mock places
+    for (let i = 2; i <= limit; i++) {
+      mockPlaces.push({
+        ...mockPlaces[0],
+        id: `mock-${city}-${category}-${i}`,
+        title: `${city} ${category} ${i}`,
+        rating: 3.5 + Math.random() * 1.5,
+        reviewCount: Math.floor(Math.random() * 200) + 50
+      });
+    }
+
+    return mockPlaces;
+  }
+
+  // AI insight methods for enhanced recommendations
+  static getBestTimeToVisit(category: string): string {
+    const timeMap: Record<string, string> = {
+      'food': 'Lunch (12-2 PM) or Dinner (6-8 PM)',
+      'entertainment': 'Evening (7-10 PM)',
+      'outdoor': 'Morning (9-11 AM) or Afternoon (3-5 PM)',
+      'culture': 'Afternoon (1-4 PM)',
+      'shopping': 'Morning (10 AM-12 PM) or Afternoon (2-5 PM)',
+      'nightlife': 'Night (9 PM-1 AM)',
+      'music': 'Evening (8-11 PM)',
+      'arts': 'Afternoon (2-5 PM)',
+      'sports': 'Morning (6-9 AM) or Evening (6-8 PM)',
+      'wellness': 'Morning (7-9 AM) or Evening (6-8 PM)'
+    };
+    
+    return timeMap[category] || 'Anytime during business hours';
+  }
+
+  static predictCrowdLevel(rating: number, reviewCount: number): string {
+    if (rating >= 4.5 && reviewCount > 500) return 'Very Busy - Peak hours';
+    if (rating >= 4.0 && reviewCount > 200) return 'Busy - Popular spot';
+    if (rating >= 3.5 && reviewCount > 100) return 'Moderate - Good balance';
+    if (rating >= 3.0) return 'Quiet - Off-peak hours';
+    return 'Variable - Check reviews for timing';
+  }
+
+  static generateLocalTip(category: string, city: string): string {
+    const tips: Record<string, string> = {
+      'food': `Try visiting during off-peak hours (2-4 PM) for shorter waits`,
+      'entertainment': `Book tickets in advance, especially on weekends`,
+      'outdoor': `Early morning visits avoid crowds and offer better photo opportunities`,
+      'culture': `Many places offer free admission on certain days - check their website`,
+      'shopping': `Weekday mornings are typically less crowded than weekends`,
+      'nightlife': `Arrive before 10 PM to avoid cover charges and long lines`,
+      'music': `Check for happy hour specials and early bird discounts`,
+      'arts': `First Friday events often have special programming and refreshments`,
+      'sports': `Weekday sessions are usually less crowded than weekend classes`,
+      'wellness': `Book appointments during off-peak hours for better availability`
+    };
+    
+    return tips[category] || `Check local ${city} guides for insider tips`;
+  }
+
+  static getWeatherConsideration(category: string): string {
+    const weatherMap: Record<string, string> = {
+      'food': 'Indoor activity - weather independent',
+      'entertainment': 'Mostly indoor - check for outdoor venues',
+      'outdoor': 'Weather dependent - check forecast before visiting',
+      'culture': 'Indoor activity - perfect for rainy days',
+      'shopping': 'Indoor activity - weather independent',
+      'nightlife': 'Indoor activity - weather independent',
+      'music': 'Indoor activity - weather independent',
+      'arts': 'Indoor activity - perfect for any weather',
+      'sports': 'Check if indoor or outdoor facility',
+      'wellness': 'Indoor activity - weather independent'
+    };
+    
+    return weatherMap[category] || 'Check venue details for weather considerations';
   }
 }

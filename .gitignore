@@ -203,3 +203,10 @@ public/uploads/
 
 # Cookies
 cookies.txt
+# Environment files
+.env
+.env.local
+.env.production
+client/.env
+client/.env.local
+client/.env.production

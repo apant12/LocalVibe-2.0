@@ -28,44 +28,63 @@ interface MapModalProps {
 const MapModal: React.FC<MapModalProps> = ({ experience, isOpen, onClose }) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
+  const [isMapLoading, setIsMapLoading] = React.useState(true);
 
   useEffect(() => {
-    if (!isOpen || !experience || !mapContainer.current) return;
+    if (!isOpen || !experience) return;
+    
+    // Reset loading state when modal opens
+    setIsMapLoading(true);
+    
+    if (!mapContainer.current) return;
 
     // Set your Mapbox access token
     const mapboxToken = import.meta.env.VITE_MAPBOX_TOKEN || 'pk.eyJ1IjoiZXhhbXBsZSIsImEiOiJjbGV4YW1wbGUifQ.example';
     mapboxgl.accessToken = mapboxToken;
 
-    // Create map
-    map.current = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/streets-v12',
-      center: [experience.longitude || -122.4194, experience.latitude || 37.7749],
-      zoom: 14
-    });
+    // Add a small delay to ensure the container is fully rendered
+    const timer = setTimeout(() => {
+      if (!mapContainer.current) return;
+      
+      setIsMapLoading(true);
+      
+      // Create map
+      map.current = new mapboxgl.Map({
+        container: mapContainer.current,
+        style: 'mapbox://styles/mapbox/streets-v12',
+        center: [experience.longitude || -122.4194, experience.latitude || 37.7749],
+        zoom: 14
+      });
 
-    // Add navigation controls
-    map.current.addControl(new mapboxgl.NavigationControl());
+      // Wait for map to load
+      map.current.on('load', () => {
+        setIsMapLoading(false);
+      });
 
-    // Add marker for the experience location
-    if (experience.latitude && experience.longitude) {
-      new mapboxgl.Marker({ color: '#3B82F6' })
-        .setLngLat([experience.longitude, experience.latitude])
-        .setPopup(
-          new mapboxgl.Popup({ offset: 25 })
-            .setHTML(`
-              <div class="p-2">
-                <h3 class="font-semibold text-sm">${experience.title}</h3>
-                <p class="text-xs text-gray-600">${experience.location}</p>
-                <p class="text-xs text-gray-600">$${experience.price}</p>
-              </div>
-            `)
-        )
-        .addTo(map.current);
-    }
+      // Add navigation controls
+      map.current.addControl(new mapboxgl.NavigationControl());
+
+      // Add marker for the experience location
+      if (experience.latitude && experience.longitude) {
+        new mapboxgl.Marker({ color: '#3B82F6' })
+          .setLngLat([experience.longitude, experience.latitude])
+          .setPopup(
+            new mapboxgl.Popup({ offset: 25 })
+              .setHTML(`
+                <div class="p-2">
+                  <h3 class="font-semibold text-sm">${experience.title}</h3>
+                  <p class="text-xs text-gray-600">${experience.location}</p>
+                  <p class="text-xs text-gray-600">$${experience.price}</p>
+                </div>
+              `)
+          )
+          .addTo(map.current);
+      }
+    }, 100); // 100ms delay to ensure DOM is ready
 
     // Cleanup
     return () => {
+      clearTimeout(timer);
       if (map.current) {
         map.current.remove();
         map.current = null;
@@ -95,6 +114,17 @@ const MapModal: React.FC<MapModalProps> = ({ experience, isOpen, onClose }) => {
               ref={mapContainer} 
               className="w-full h-64 rounded-lg overflow-hidden"
             />
+            
+            {/* Loading indicator */}
+            {isMapLoading && (
+              <div className="absolute inset-0 bg-white bg-opacity-90 flex items-center justify-center">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                  <p className="text-sm text-gray-600">Loading map...</p>
+                </div>
+              </div>
+            )}
+            
             {(!mapboxgl.accessToken || mapboxgl.accessToken.includes('example')) && (
               <div className="absolute inset-0 bg-gradient-to-br from-blue-100 to-purple-100 flex items-center justify-center">
                 <div className="text-center text-gray-600 p-6">

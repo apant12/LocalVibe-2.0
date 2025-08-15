@@ -870,6 +870,66 @@ export async function registerRoutes(app: Express): Promise<void> {
           thumbnailUrl: 'https://images.unsplash.com/photo-1551632811-561732d1e306?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225'
         },
         {
+          id: 'video-5-6',
+          url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4',
+          experienceId: 'general',
+          title: 'Coffee Shop Experience - Artisan Brewing',
+          description: 'Behind the scenes of coffee brewing process',
+          tags: ['coffee', 'food', 'brewing', 'artisan'],
+          uploadedBy: 'user-18',
+          uploadedAt: new Date().toISOString(),
+          duration: 48,
+          thumbnailUrl: 'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225'
+        },
+        {
+          id: 'video-5-7',
+          url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMob.mp4',
+          experienceId: 'general',
+          title: 'Music Venue - Live Performance',
+          description: 'Amazing live music atmosphere and crowd',
+          tags: ['music', 'live', 'performance', 'venue'],
+          uploadedBy: 'user-19',
+          uploadedAt: new Date().toISOString(),
+          duration: 52,
+          thumbnailUrl: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225'
+        },
+        {
+          id: 'video-5-8',
+          url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+          experienceId: 'general',
+          title: 'Art Gallery - Exhibition Walkthrough',
+          description: 'Exploring contemporary art installations',
+          tags: ['art', 'gallery', 'exhibition', 'culture'],
+          uploadedBy: 'user-20',
+          uploadedAt: new Date().toISOString(),
+          duration: 58,
+          thumbnailUrl: 'https://images.unsplash.com/photo-1541961017774-a3eb161ffa5f?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225'
+        },
+        {
+          id: 'video-5-9',
+          url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+          experienceId: 'general',
+          title: 'Restaurant Kitchen - Chef at Work',
+          description: 'Watch skilled chefs create culinary masterpieces',
+          tags: ['food', 'kitchen', 'chef', 'cooking'],
+          uploadedBy: 'user-21',
+          uploadedAt: new Date().toISOString(),
+          duration: 45,
+          thumbnailUrl: 'https://images.unsplash.com/photo-1504674900240-9c69b0c9e763?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225'
+        },
+        {
+          id: 'video-5-10',
+          url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+          experienceId: 'general',
+          title: 'Fitness Studio - Workout Session',
+          description: 'High-energy fitness class in action',
+          tags: ['fitness', 'workout', 'health', 'exercise'],
+          uploadedBy: 'user-22',
+          uploadedAt: new Date().toISOString(),
+          duration: 42,
+          thumbnailUrl: 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225'
+        },
+        {
           id: 'video-5-2',
           url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
           experienceId: 'general',
@@ -1253,6 +1313,86 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Stripe checkout endpoint
+  app.post('/api/create-checkout-session', async (req, res) => {
+    try {
+      const { experienceId, title, price, location, startTime, hostName } = req.body;
+      
+      // In a real app, you would create a Stripe checkout session here
+      // For demo purposes, we'll simulate the process
+      
+      // Validate required fields
+      if (!experienceId || !title || !price || !location) {
+        return res.status(400).json({ message: 'Missing required fields' });
+      }
+
+      // Simulate Stripe session creation
+      const sessionId = `cs_test_${Math.random().toString(36).substr(2, 9)}`;
+      
+      // In production, you would:
+      // 1. Create a Stripe checkout session
+      // 2. Store booking details in your database
+      // 3. Return the session ID for redirect
+      
+      console.log('Creating checkout session for:', {
+        experienceId,
+        title,
+        price,
+        location,
+        startTime,
+        hostName
+      });
+
+      res.json({
+        sessionId,
+        message: 'Checkout session created successfully'
+      });
+    } catch (error) {
+      console.error('Error creating checkout session:', error);
+      res.status(500).json({ message: 'Failed to create checkout session' });
+    }
+  });
+
+  // AI-powered place recommendations using Google Places API
+  app.get('/api/ai/recommendations', async (req, res) => {
+    try {
+      const { city = 'San Francisco', category, limit = 10 } = req.query;
+      
+      // Import the AI service
+      const { VideoRecommendationEngine } = await import('./aiService');
+      
+      // Get AI-powered recommendations using Google Places data
+      const recommendations = await VideoRecommendationEngine.fetchGooglePlaces(
+        city as string,
+        category as string || 'food',
+        parseInt(limit as string)
+      );
+      
+      // Enhance with AI insights
+      const enhancedRecommendations = recommendations.map(place => ({
+        ...place,
+        aiInsights: {
+          bestTimeToVisit: VideoRecommendationEngine.getBestTimeToVisit(place.category),
+          crowdLevel: VideoRecommendationEngine.predictCrowdLevel(place.rating, place.reviewCount),
+          localTip: VideoRecommendationEngine.generateLocalTip(place.category, city as string),
+          weatherConsideration: VideoRecommendationEngine.getWeatherConsideration(place.category)
+        }
+      }));
+      
+      res.json({
+        count: enhancedRecommendations.length,
+        city: city as string,
+        category: category as string || 'food',
+        source: 'google-places-ai',
+        recommendations: enhancedRecommendations
+      });
+      
+    } catch (error) {
+      console.error('Error generating AI recommendations:', error);
+      res.status(500).json({ message: 'Failed to generate AI recommendations' });
+    }
+  });
+
   // Experiences endpoint
   app.get('/api/experiences', async (req, res) => {
     try {
@@ -1309,6 +1449,54 @@ export async function registerRoutes(app: Express): Promise<void> {
           hostName: 'Ticketmaster Events',
           latitude: 37.7694,
           longitude: -122.4862
+        },
+        {
+          id: 'tm-event-4',
+          title: 'Jazz Night at Blue Note',
+          description: 'Smooth jazz evening with local musicians',
+          imageUrl: 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225',
+          videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
+          location: 'Blue Note Jazz Club, San Francisco',
+          city: 'San Francisco',
+          price: '35',
+          startTime: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+          endTime: new Date(Date.now() + 50 * 60 * 60 * 1000).toISOString(),
+          status: 'active',
+          type: 'paid',
+          availability: 'available',
+          isDropIn: false,
+          tags: ['ticketmaster', 'jazz', 'music', 'nightlife'],
+          externalId: 'tm-event-4',
+          externalSource: 'ticketmaster',
+          category: 'music',
+          hostId: 'ticketmaster',
+          hostName: 'Blue Note Jazz Club',
+          latitude: 37.7749,
+          longitude: -122.4194
+        },
+        {
+          id: 'tm-event-5',
+          title: 'Food & Wine Festival',
+          description: 'Annual celebration of local cuisine and wines',
+          imageUrl: 'https://images.unsplash.com/photo-1504674900240-9c69b0c9e763?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=225',
+          videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMob.mp4',
+          location: 'Ferry Building, San Francisco',
+          city: 'San Francisco',
+          price: '75',
+          startTime: new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString(),
+          endTime: new Date(Date.now() + 74 * 60 * 60 * 1000).toISOString(),
+          status: 'active',
+          type: 'paid',
+          availability: 'available',
+          isDropIn: false,
+          tags: ['ticketmaster', 'food', 'wine', 'festival'],
+          externalId: 'tm-event-5',
+          externalSource: 'ticketmaster',
+          category: 'food',
+          hostId: 'ticketmaster',
+          hostName: 'SF Food & Wine Festival',
+          latitude: 37.7952,
+          longitude: -122.3933
         },
         {
           id: 'tm-event-2',

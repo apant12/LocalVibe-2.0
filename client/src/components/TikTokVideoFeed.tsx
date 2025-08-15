@@ -421,17 +421,9 @@ const TikTokVideoFeed: React.FC = () => {
 
   return (
     <div className="h-screen bg-black relative overflow-hidden">
-      {/* Navigation Hint */}
-      {showNavigationHint && (
-        <div className="absolute top-20 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white px-6 py-3 rounded-lg z-40 text-sm font-semibold shadow-lg">
-          🔄 Swipe UP/DOWN for events • ↔️ Swipe LEFT/RIGHT for videos
-        </div>
-      )}
 
-      {/* Debug Info */}
-      <div className="absolute top-32 left-4 bg-green-600 text-white px-4 py-3 rounded-lg z-40 text-sm font-bold shadow-lg">
-        📍 Event: {currentEventIndex + 1}/{experienceGroups.length} | 🎬 Video: {currentVideoIndex + 1}/{currentGroup.videos.length}
-      </div>
+
+
 
       {/* Progress Bar at Top - Shows event progress */}
       <div className="absolute top-0 left-0 right-0 z-30 p-4">
@@ -485,7 +477,6 @@ const TikTokVideoFeed: React.FC = () => {
           {/* Top Info */}
           <div className="absolute top-20 left-4 right-4 text-white">
             <div className="flex items-center gap-2 mb-2">
-              <span className="bg-red-500 px-2 py-1 rounded text-xs font-bold">LIVE</span>
               <span className="text-sm">{currentExperience.category}</span>
               {currentVideo.isRecommended && (
                 <span className="bg-blue-500 px-2 py-1 rounded text-xs font-bold">AI RECOMMENDED</span>

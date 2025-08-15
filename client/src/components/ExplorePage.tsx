@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { MapPin, Calendar, DollarSign, Users, Star, Filter, Search } from 'lucide-react';
+import EventDetailsModal from './EventDetailsModal';
 
 interface Experience {
   id: string;
@@ -17,6 +18,8 @@ interface Experience {
   tags: string[];
   latitude?: number;
   longitude?: number;
+  externalSource?: string;
+  externalId?: string;
 }
 
 interface Itinerary {
@@ -40,6 +43,8 @@ const ExplorePage: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const [selectedExperience, setSelectedExperience] = useState<Experience | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Fetch experiences
   const { data: experiences = [], isLoading: experiencesLoading } = useQuery({
@@ -98,6 +103,16 @@ const ExplorePage: React.FC = () => {
       case 'Night': return 'bg-blue-100 text-blue-800';
       default: return 'bg-gray-100 text-gray-800';
     }
+  };
+
+  const handleExperienceClick = (experience: Experience) => {
+    setSelectedExperience(experience);
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedExperience(null);
   };
 
   if (experiencesLoading || recommendationsLoading) {
@@ -253,7 +268,11 @@ const ExplorePage: React.FC = () => {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {filteredExperiences.map((experience: Experience) => (
-                <div key={experience.id} className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow">
+                <div 
+                  key={experience.id} 
+                  className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
+                  onClick={() => handleExperienceClick(experience)}
+                >
                   <div className="relative">
                     <img
                       src={experience.imageUrl}
@@ -270,6 +289,13 @@ const ExplorePage: React.FC = () => {
                         ${experience.price}
                       </span>
                     </div>
+                    {experience.externalSource === 'ticketmaster' && (
+                      <div className="absolute top-2 left-1/2 transform -translate-x-1/2">
+                        <span className="px-2 py-1 bg-blue-600 text-white text-xs rounded font-medium">
+                          🎫 Ticketmaster
+                        </span>
+                      </div>
+                    )}
                     <div className="absolute bottom-2 left-2">
                       <span className="px-2 py-1 bg-black/70 text-white text-xs rounded">
                         📍 {experience.city}
@@ -302,10 +328,16 @@ const ExplorePage: React.FC = () => {
                     </div>
                     
                     <div className="flex gap-2">
-                      <button className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm hover:bg-blue-700 transition-colors">
-                        Quick Book
+                      <button 
+                        onClick={() => handleExperienceClick(experience)}
+                        className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm hover:bg-blue-700 transition-colors"
+                      >
+                        {experience.externalSource === 'ticketmaster' ? 'Book on TM' : 'Quick Book'}
                       </button>
-                      <button className="px-3 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-colors">
+                      <button 
+                        onClick={() => handleExperienceClick(experience)}
+                        className="px-3 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-colors"
+                      >
                         Details
                       </button>
                     </div>
@@ -316,6 +348,13 @@ const ExplorePage: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Event Details Modal */}
+      <EventDetailsModal
+        experience={selectedExperience}
+        isOpen={isModalOpen}
+        onClose={handleCloseModal}
+      />
     </div>
   );
 };
