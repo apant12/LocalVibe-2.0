@@ -1,6 +1,7 @@
 {
   "name": "localvibe",
   "version": "1.0.0",
+
   "description": "LocalVibe - Discover amazing local experiences",
   "main": "dist/index.js",
   "scripts": {
@@ -11,21 +12,14 @@
     "build:client": "cd client && npm run build",
     "build:server": "esbuild server/index.ts --platform=node --packages=external --bundle --format=cjs --outdir=dist",
     "start": "node dist/index.js",
-    "vercel-build": "npm run build",
+    "vercel-build": "npm run build:client && npm run build:server",
     "deploy": "vercel --prod"
   },
-  "keywords": [
-    "experiences",
-    "local",
-    "events",
-    "travel"
-  ],
+  "keywords": ["experiences", "local", "events", "travel"],
   "author": "LocalVibe Team",
   "license": "MIT",
   "dependencies": {
-    "@stripe/stripe-js": "^7.8.0",
     "@tanstack/react-query": "^5.0.0",
-    "dotenv": "^17.2.1",
     "express": "^4.18.2",
     "express-session": "^1.17.3",
     "mapbox-gl": "^2.15.0",
