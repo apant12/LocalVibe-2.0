@@ -4,6 +4,54 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Mobile-first responsive design fixes */
+html {
+  font-size: 16px; /* Base font size */
+  -webkit-text-size-adjust: 100%; /* Prevent iOS font scaling */
+  -ms-text-size-adjust: 100%;
+}
+
+body {
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Mobile viewport fixes */
+@media screen and (max-width: 768px) {
+  html {
+    font-size: 14px; /* Slightly smaller on mobile */
+  }
+  
+  /* Prevent horizontal scrolling */
+  body {
+    overflow-x: hidden;
+    width: 100%;
+  }
+  
+  /* Fix button overlapping issues */
+  .fixed {
+    z-index: 50;
+  }
+  
+  /* Ensure proper spacing on mobile */
+  .space-y-6 > * + * {
+    margin-top: 1.5rem;
+  }
+  
+  /* Fix grid layouts on small screens */
+  .grid {
+    gap: 0.75rem;
+  }
+  
+  /* Better touch targets */
+  button, [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
 /* Custom animations for micro-interactions */
 @keyframes shimmer {
   0% {

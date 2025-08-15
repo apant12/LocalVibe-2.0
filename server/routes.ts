@@ -1007,6 +1007,125 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Video upload endpoint for Mux integration
+  app.post('/api/upload/video', isAuthenticated, async (req: any, res) => {
+    try {
+      // This is a placeholder - you'll need to implement actual Mux upload logic
+      // For now, return mock data to test the frontend
+      const mockResponse = {
+        playbackUrl: 'https://stream.mux.com/mock-video.m3u8',
+        thumbnailUrl: 'https://via.placeholder.com/400x300/1f2937/ffffff?text=Video+Thumbnail',
+        videoId: 'mock-video-' + Date.now()
+      };
+      
+      res.json(mockResponse);
+    } catch (error) {
+      console.error('Video upload error:', error);
+      res.status(500).json({ message: 'Video upload failed' });
+    }
+  });
+
+  // Get videos endpoint
+  app.get('/api/videos', async (req, res) => {
+    try {
+      // Mock video data for testing
+      const mockVideos = [
+        {
+          id: '1',
+          title: 'Amazing Concert Experience!',
+          description: 'Had an incredible time at the Warriors game! The energy was electric!',
+          videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+          thumbnailUrl: 'https://via.placeholder.com/400x300/1f2937/ffffff?text=Concert+Video',
+          eventId: 'event-1',
+          eventName: 'Warriors vs Cavaliers',
+          eventLocation: 'San Francisco, CA',
+          eventDate: '2024-08-14',
+          uploaderId: 'user-1',
+          uploaderName: 'John Doe',
+          uploaderAvatar: 'https://ui-avatars.com/api/?name=John+Doe&background=random',
+          likes: 42,
+          comments: 8,
+          views: 156,
+          isLiked: false,
+          isSaved: false,
+          duration: 45,
+          uploadDate: '2024-08-14T10:00:00Z'
+        },
+        {
+          id: '2',
+          title: 'Food Festival Highlights',
+          description: 'Check out all the amazing food we tried at the local food festival!',
+          videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+          thumbnailUrl: 'https://via.placeholder.com/400x300/1f2937/ffffff?text=Food+Festival',
+          eventId: 'event-2',
+          eventName: 'San Francisco Food Festival',
+          eventLocation: 'San Francisco, CA',
+          eventDate: '2024-08-13',
+          uploaderId: 'user-2',
+          uploaderName: 'Jane Smith',
+          uploaderAvatar: 'https://ui-avatars.com/api/?name=Jane+Smith&background=random',
+          likes: 28,
+          comments: 12,
+          views: 89,
+          isLiked: true,
+          isSaved: true,
+          duration: 32,
+          uploadDate: '2024-08-13T15:30:00Z'
+        }
+      ];
+
+      // Filter by event if provided
+      let filteredVideos = mockVideos;
+      if (req.query.eventId && typeof req.query.eventId === 'string') {
+        filteredVideos = mockVideos.filter(v => v.eventId === req.query.eventId);
+      }
+      if (req.query.category && typeof req.query.category === 'string') {
+        // Mock category filtering
+        filteredVideos = mockVideos.filter(v => v.eventName.toLowerCase().includes(req.query.category.toLowerCase()));
+      }
+
+      const limit = req.query.limit && typeof req.query.limit === 'string' ? parseInt(req.query.limit) : 10;
+      res.json(filteredVideos.slice(0, limit));
+    } catch (error) {
+      console.error('Error fetching videos:', error);
+      res.status(500).json({ message: 'Failed to fetch videos' });
+    }
+  });
+
+  // Like video endpoint
+  app.post('/api/videos/:id/like', isAuthenticated, async (req: any, res) => {
+    try {
+      const videoId = req.params.id;
+      // Mock like functionality
+      const isLiked = Math.random() > 0.5; // Random for demo
+      
+      res.json({
+        isLiked,
+        message: isLiked ? 'Video liked!' : 'Like removed'
+      });
+    } catch (error) {
+      console.error('Error liking video:', error);
+      res.status(500).json({ message: 'Failed to like video' });
+    }
+  });
+
+  // Save video endpoint
+  app.post('/api/videos/:id/save', isAuthenticated, async (req: any, res) => {
+    try {
+      const videoId = req.params.id;
+      // Mock save functionality
+      const isSaved = Math.random() > 0.5; // Random for demo
+      
+      res.json({
+        isSaved,
+        message: isSaved ? 'Video saved!' : 'Video unsaved'
+      });
+    } catch (error) {
+      console.error('Error saving video:', error);
+      res.status(500).json({ message: 'Failed to save video' });
+    }
+  });
+
   // Service status endpoint
   app.get('/api/services/status', async (req, res) => {
     res.json({

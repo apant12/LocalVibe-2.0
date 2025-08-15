@@ -19,6 +19,7 @@ import Admin from "@/pages/admin";
 import NotFound from "@/pages/not-found";
 import ExploreNew from "@/pages/explore-new";
 import MapPage from "@/pages/map";
+import Rewards from "@/pages/rewards";
 const HomeNew = lazy(() => import("@/pages/home-new"));
 
 function Router() {
@@ -58,6 +59,7 @@ function Router() {
             </Suspense>
           )} />
           <Route path="/bookings" component={Bookings} />
+          <Route path="/rewards" component={Rewards} />
           <Route path="/profile" component={Profile} />
           <Route path="/settings" component={Settings} />
           <Route path="/checkout" component={Checkout} />
